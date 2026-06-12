@@ -25,6 +25,21 @@ internal static partial class FfmpegNative
     internal static partial int avformat_find_stream_info(IntPtr ps, IntPtr options);
 
     [LibraryImport(AvFormat)]
+    internal static partial long av_find_best_stream(IntPtr ps, int mediaType, int wantedStreamNb, int relatedStream, ref IntPtr decoderRet, int flags);
+
+    [LibraryImport(AvFormat)]
+    internal static partial long av_seek_frame(IntPtr s, int streamIndex, long timestamp, int flags);
+
+    [LibraryImport(AvFormat)]
+    internal static partial uint avformat_version();
+
+    [LibraryImport(AvCodec)]
+    internal static partial uint avcodec_version();
+
+    [LibraryImport(AvUtil)]
+    internal static partial uint avutil_version();
+
+    [LibraryImport(AvFormat)]
     internal static partial int av_read_frame(IntPtr ps, IntPtr pkt);
 
     [LibraryImport(AvFormat)]
@@ -110,4 +125,8 @@ internal static partial class FfmpegNative
     internal const int AV_PIX_FMT_BGRA = 26;
     internal const int AV_PIX_FMT_YUV420P = 0;
     internal const int SWS_BILINEAR = 2;
+
+    internal const int AVSEEK_FLAG_BACKWARD = 1;
+    internal const int AVSEEK_FLAG_FRAME = 2;
+    internal const int AVSEEK_FLAG_ANY = 4;
 }
