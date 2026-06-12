@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
+using System.Runtime.CompilerServices;
 using WallpaperApp.Models;
 using WallpaperApp.Services.Library;
 using WallpaperApp.Services.Logging;
@@ -9,13 +11,15 @@ using WallpaperApp.Services.Settings;
 
 namespace WallpaperApp.UI.ViewModels;
 
-public sealed class MainViewModel
+public sealed class MainViewModel : INotifyPropertyChanged
 {
     private readonly LibraryService _library;
     private readonly PlaybackManager _playback;
     private readonly MonitorManager _monitors;
     private readonly SettingsService _settings;
     private readonly FileLogger _logger;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<WallpaperItem> Wallpapers { get; } = new();
     public ObservableCollection<MonitorInfo> Monitors { get; } = new();
@@ -24,7 +28,19 @@ public sealed class MainViewModel
     public WallpaperItem? SelectedWallpaper
     {
         get => _selectedWallpaper;
-        set => _selectedWallpaper = value;
+        set
+        {
+            if (_selectedWallpaper != value)
+            {
+                _selectedWallpaper = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 
     public AppSettings Settings { get; private set; } = new();

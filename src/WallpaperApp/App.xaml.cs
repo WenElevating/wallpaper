@@ -26,14 +26,17 @@ public partial class App : Application
         _serviceProvider = services.BuildServiceProvider();
 
         var logger = _serviceProvider.GetRequiredService<FileLogger>();
-        var db = _serviceProvider.GetRequiredService<AppDbContext>();
-        var settings = _serviceProvider.GetRequiredService<SettingsService>();
 
         logger.Info("WallpaperApp starting...");
 
-        await db.MigrateAsync();
+        // Run migration with a standalone context to avoid threading issues
+        using (var migrateDb = new AppDbContext())
+        {
+            await migrateDb.MigrateAsync();
+        }
         logger.Info("Database migrated");
 
+        var settings = _serviceProvider.GetRequiredService<SettingsService>();
         var appSettings = await settings.LoadAsync();
         var viewModel = _serviceProvider.GetRequiredService<MainViewModel>();
         await viewModel.LoadAsync();
@@ -51,9 +54,11 @@ public partial class App : Application
     private static void ConfigureServices(IServiceCollection services)
     {
         services.AddSingleton<FileLogger>();
-        services.AddSingleton<AppDbContext>();
+        services.AddTransient<AppDbContext>();
         services.AddSingleton<SettingsService>();
         services.AddSingleton<LibraryService>();
+        services.AddSingleton<ThumbnailService>();
+        services.AddSingleton<GifTranscoder>();
         services.AddSingleton<PlaybackManager>();
         services.AddSingleton<DesktopHost>();
         services.AddSingleton<MonitorManager>();

@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using WallpaperApp.Data;
 using WallpaperApp.Models;
 using WallpaperApp.Services.Logging;
@@ -42,8 +43,11 @@ public class LibraryServiceTests : IDisposable
     private LibraryService CreateService()
     {
         var ctx = CreateContext();
+        var services = new ServiceCollection();
+        services.AddSingleton(ctx);
+        var sp = services.BuildServiceProvider();
         var logger = new FileLogger(Path.Combine(Path.GetTempPath(), "WallpaperAppTestLogs_" + Guid.NewGuid().ToString("N")[..8]));
-        return new LibraryService(logger, ctx, _testLibDir);
+        return new LibraryService(logger, sp, _testLibDir);
     }
 
     [Fact]

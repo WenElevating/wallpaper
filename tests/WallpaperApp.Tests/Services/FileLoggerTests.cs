@@ -131,14 +131,14 @@ public class FileLoggerTests : IDisposable
     }
 
     [Fact]
-    public void ThreadSafety_ConcurrentWrites_DontCrash()
+    public async Task ThreadSafety_ConcurrentWrites_DontCrash()
     {
         var logFile = Path.Combine(_tempDir, $"wallpaper-{DateTime.UtcNow:yyyy-MM-dd}.log");
         var logger = new FileLogger(_tempDir);
 
         var tasks = Enumerable.Range(0, 20).Select(i =>
             Task.Run(() => logger.Info($"thread {i} message")));
-        Task.WhenAll(tasks).GetAwaiter().GetResult();
+        await Task.WhenAll(tasks);
 
         logger.Dispose();
 

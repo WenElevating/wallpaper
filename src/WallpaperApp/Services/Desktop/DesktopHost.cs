@@ -1,4 +1,3 @@
-using System.IO;
 using System.Runtime.InteropServices;
 using WallpaperApp.Interop;
 using WallpaperApp.Services.Logging;
@@ -16,14 +15,12 @@ public sealed class DesktopHost : IDisposable
 {
     private readonly FileLogger _logger;
     private readonly System.Timers.Timer _retryTimer;
-    private IntPtr _progmanHwnd;
-    private IntPtr _workerWHwnd;
-    private IntPtr _childHwnd;
+    private readonly List<WallpaperWindow> _wallpaperWindows = new();
     private bool _isAttached;
     private bool _disposed;
 
     public bool IsAttached => _isAttached;
-    public IntPtr ChildHwnd => _childHwnd;
+    public IReadOnlyList<WallpaperWindow> WallpaperWindows => _wallpaperWindows.AsReadOnly();
 
     public event EventHandler? Attached;
     public event EventHandler? Detached;
@@ -38,66 +35,45 @@ public sealed class DesktopHost : IDisposable
     public bool Attach()
     {
         if (_isAttached) return true;
-        _progmanHwnd = FindWindowByClass("Progman");
-        if (_progmanHwnd == IntPtr.Zero)
+
+        var window = new WallpaperWindow(_logger);
+        if (window.TryAttachToDesktop())
         {
-            _logger.Warn("Progman window not found");
-            return false;
+            _wallpaperWindows.Add(window);
+            _isAttached = true;
+            _retryTimer.Start();
+            _logger.Info("DesktopHost attached");
+            Attached?.Invoke(this, EventArgs.Empty);
+            return true;
         }
 
-        NativeMethods.SendMessageW(_progmanHwnd, NativeMethods.WM_SPAWN_WORKERW, IntPtr.Zero, IntPtr.Zero);
-
-        _workerWHwnd = FindWorkerW();
-        if (_workerWHwnd == IntPtr.Zero)
-        {
-            _logger.Warn("WorkerW window not found, using fallback");
-            _workerWHwnd = CreateFallbackWindow();
-        }
-
-        if (_workerWHwnd == IntPtr.Zero)
-        {
-            _logger.Error("Failed to find or create WorkerW");
-            return false;
-        }
-
-        _isAttached = true;
-        _retryTimer.Start();
-        _logger.Info("DesktopHost attached");
-        Attached?.Invoke(this, EventArgs.Empty);
-        return true;
+        window.Dispose();
+        _isAttached = false;
+        _logger.Error("Failed to attach to desktop");
+        return false;
     }
 
-    public IntPtr CreateForMonitor(int x, int y, int width, int height)
+    public WallpaperWindow? CreateForMonitor(int x, int y, int width, int height)
     {
-        if (!_isAttached) throw new InvalidOperationException("Not attached");
+        if (!_isAttached) return null;
 
-        var parentHwnd = _workerWHwnd != IntPtr.Zero ? _workerWHwnd : _progmanHwnd;
-        var hInstance = NativeMethods.GetModuleHandleW(null);
-
-        _childHwnd = NativeMethods.CreateWindowExW(
-            0, "STATIC", null,
-            NativeMethods.WS_CHILD,
-            x, y, width, height,
-            parentHwnd, IntPtr.Zero, hInstance, IntPtr.Zero);
-
-        if (_childHwnd == IntPtr.Zero)
+        var window = new WallpaperWindow(_logger);
+        if (window.TryAttachToDesktop())
         {
-            _logger.Error("Failed to create child HWND");
-            return IntPtr.Zero;
+            window.Resize(x, y, width, height);
+            _wallpaperWindows.Add(window);
+            _logger.Info($"Created wallpaper window at ({x},{y}) {width}x{height}");
+            return window;
         }
 
-        NativeMethods.ShowWindow(_childHwnd, NativeMethods.SW_SHOW);
-        _logger.Info($"Created child HWND: {_childHwnd} at ({x},{y}) {width}x{height}");
-        return _childHwnd;
+        window.Dispose();
+        return null;
     }
 
     public void ResizeMainWindow(int x, int y, int width, int height)
     {
-        if (_childHwnd == IntPtr.Zero) return;
-        NativeMethods.SetWindowPos(
-            _childHwnd, IntPtr.Zero,
-            x, y, width, height,
-            NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
+        foreach (var w in _wallpaperWindows)
+            w.Resize(x, y, width, height);
     }
 
     public void Detach()
@@ -105,95 +81,13 @@ public sealed class DesktopHost : IDisposable
         if (!_isAttached) return;
         _retryTimer.Stop();
 
-        if (_childHwnd != IntPtr.Zero)
-        {
-            NativeMethods.DestroyWindow(_childHwnd);
-            _childHwnd = IntPtr.Zero;
-        }
+        foreach (var w in _wallpaperWindows)
+            w.Dispose();
+        _wallpaperWindows.Clear();
 
         _isAttached = false;
         _logger.Info("DesktopHost detached");
         Detached?.Invoke(this, EventArgs.Empty);
-    }
-
-    private static IntPtr FindWindowByClass(string className)
-    {
-        IntPtr found = IntPtr.Zero;
-        NativeMethods.EnumWindows((hWnd, _) =>
-        {
-            var buf = new char[256];
-            NativeMethods.GetClassNameW(hWnd, buf, 256);
-            var name = new string(buf, 0, Array.IndexOf(buf, '\0'));
-            if (name == className)
-            {
-                found = hWnd;
-                return false;
-            }
-            return true;
-        }, IntPtr.Zero);
-        return found;
-    }
-
-    private IntPtr FindWorkerW()
-    {
-        var workerW = IntPtr.Zero;
-        NativeMethods.EnumWindows((hWnd, _) =>
-        {
-            var className = new char[256];
-            NativeMethods.GetClassNameW(hWnd, className, 256);
-            var name = new string(className, 0, Array.IndexOf(className, '\0'));
-            if (name == "WorkerW")
-            {
-                var child = FindWindowByClassIn(hWnd, "SHELLDLL_DefView");
-                if (child != IntPtr.Zero)
-                {
-                    workerW = hWnd;
-                    return false;
-                }
-            }
-            return true;
-        }, IntPtr.Zero);
-        return workerW;
-    }
-
-    private static IntPtr FindWindowByClassIn(IntPtr parent, string className)
-    {
-        IntPtr found = IntPtr.Zero;
-        DesktopNative.EnumChildWindows(parent, (hWnd, _) =>
-        {
-            var buf = new char[256];
-            NativeMethods.GetClassNameW(hWnd, buf, 256);
-            var name = new string(buf, 0, Array.IndexOf(buf, '\0'));
-            if (name == className)
-            {
-                found = hWnd;
-                return false;
-            }
-            return true;
-        }, IntPtr.Zero);
-        return found;
-    }
-
-    private IntPtr CreateFallbackWindow()
-    {
-        var exStyle = NativeMethods.WS_EX_TOOLWINDOW | NativeMethods.WS_EX_NOACTIVATE;
-        var hInstance = NativeMethods.GetModuleHandleW(null);
-
-        var hwnd = NativeMethods.CreateWindowExW(
-            (uint)exStyle, "STATIC", null,
-            NativeMethods.WS_CHILD,
-            0, 0, 0, 0,
-            _progmanHwnd, IntPtr.Zero, hInstance, IntPtr.Zero);
-
-        if (hwnd != IntPtr.Zero)
-        {
-            NativeMethods.SetWindowPos(
-                hwnd, NativeMethods.HWND_BOTTOM,
-                0, 0, 0, 0,
-                NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
-        }
-
-        return hwnd;
     }
 
     private void RetryAttach()

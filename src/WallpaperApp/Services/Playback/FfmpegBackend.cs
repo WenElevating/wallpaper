@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using WallpaperApp.Services.Logging;
 
@@ -7,6 +8,8 @@ namespace WallpaperApp.Services.Playback;
 public sealed class FfmpegBackend : IPlaybackBackend
 {
     private readonly FileLogger _logger;
+    private readonly string _ffmpegPath;
+    private readonly string _ffprobePath;
     private Process? _ffmpegProcess;
     private string? _filePath;
     private bool _isPlaying;
@@ -26,7 +29,24 @@ public sealed class FfmpegBackend : IPlaybackBackend
     public TimeSpan Position => _position;
     public event EventHandler? EndOfStream;
 
-    public FfmpegBackend(FileLogger logger) { _logger = logger; }
+    public FfmpegBackend(FileLogger logger)
+    {
+        _logger = logger;
+        _ffmpegPath = ResolveToolPath("ffmpeg.exe");
+        _ffprobePath = ResolveToolPath("ffprobe.exe");
+    }
+
+    private static string ResolveToolPath(string toolName)
+    {
+        // Check bundled path first
+        var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+        var bundled = Path.Combine(baseDir, "ffmpeg", toolName);
+        if (File.Exists(bundled))
+            return bundled;
+
+        // Fall back to PATH
+        return toolName;
+    }
 
     public async Task<bool> OpenAsync(string filePath, CancellationToken ct = default)
     {
@@ -79,7 +99,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
         _decodeCts = new CancellationTokenSource();
         var seekArg = _position.TotalSeconds > 0 ? $"-ss {_position.TotalSeconds:F3}" : "";
         _ffmpegProcess = new Process { StartInfo = new ProcessStartInfo {
-            FileName = "ffmpeg", Arguments = $"{seekArg} -i \"{_filePath}\" -f rawvideo -pix_fmt bgra -v error -",
+            FileName = _ffmpegPath, Arguments = $"{seekArg} -i \"{_filePath}\" -f rawvideo -pix_fmt bgra -v error -",
             UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true }};
         _ffmpegProcess.Start();
     }
@@ -94,7 +114,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
     {
         try
         {
-            var psi = new ProcessStartInfo { FileName = "ffprobe",
+            var psi = new ProcessStartInfo { FileName = _ffprobePath,
                 Arguments = $"-v error -select_streams v:0 -show_entries stream=width,height,r_frame_rate -show_entries format=duration -of json \"{filePath}\"",
                 UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true };
             using var process = Process.Start(psi);

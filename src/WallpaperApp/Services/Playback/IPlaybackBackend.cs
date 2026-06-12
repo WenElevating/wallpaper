@@ -18,4 +18,17 @@ public interface IPlaybackBackend : IDisposable
     event EventHandler? EndOfStream;
 }
 
-public record FrameData(IntPtr Buffer, int Width, int Height, int Stride, long PresentationTimestampUs);
+public sealed class FrameData(IntPtr buffer, int width, int height, int stride, long presentationTimestampUs) : IDisposable
+{
+    public IntPtr Buffer { get; } = buffer;
+    public int Width { get; } = width;
+    public int Height { get; } = height;
+    public int Stride { get; } = stride;
+    public long PresentationTimestampUs { get; } = presentationTimestampUs;
+
+    public void Dispose()
+    {
+        if (Buffer != IntPtr.Zero)
+            Marshal.FreeHGlobal(Buffer);
+    }
+}

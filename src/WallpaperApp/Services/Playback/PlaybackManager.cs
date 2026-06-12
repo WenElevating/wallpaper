@@ -41,6 +41,16 @@ public sealed class PlaybackManager : IDisposable
         var loaded = await session.LoadFileAsync(filePath, ct);
         if (!loaded)
         {
+            // Try fallback backend
+            backend.Dispose();
+            _logger.Warn($"FfmpegBackend failed to load, trying MfBackend fallback");
+            backend = CreateFallbackBackend();
+            session = new PlaybackSession(monitorId, backend, _logger);
+            loaded = await session.LoadFileAsync(filePath, ct);
+        }
+
+        if (!loaded)
+        {
             session.Dispose();
             _logger.Error($"Failed to load wallpaper for monitor {monitorId}: {filePath}");
             return;
@@ -110,16 +120,13 @@ public sealed class PlaybackManager : IDisposable
 
     private IPlaybackBackend CreateBackend()
     {
-        try
-        {
-            var backend = new FfmpegBackend(_logger);
-            return backend;
-        }
-        catch
-        {
-            _logger.Warn("FfmpegBackend failed, falling back to MfBackend");
-            return new MfBackend(_logger);
-        }
+        return new FfmpegBackend(_logger);
+    }
+
+    private IPlaybackBackend CreateFallbackBackend()
+    {
+        _logger.Warn("FfmpegBackend failed, falling back to MfBackend");
+        return new MfBackend(_logger);
     }
 
     public void Dispose()

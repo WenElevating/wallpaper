@@ -1,6 +1,7 @@
 using System.IO;
 using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using WallpaperApp.Data;
 using WallpaperApp.Models;
 using WallpaperApp.Services.Logging;
@@ -11,16 +12,21 @@ public sealed class LibraryService
 {
     private readonly FileLogger _logger;
     private readonly string _libraryDir;
-    private readonly AppDbContext _db;
+    private readonly IServiceProvider _serviceProvider;
 
-    public LibraryService(FileLogger logger, AppDbContext db, string? libraryDir = null)
+    public LibraryService(FileLogger logger, IServiceProvider serviceProvider, string? libraryDir = null)
     {
         _logger = logger;
-        _db = db;
+        _serviceProvider = serviceProvider;
         _libraryDir = libraryDir ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WallpaperApp", "library");
         Directory.CreateDirectory(_libraryDir);
+    }
+
+    private AppDbContext CreateDbContext()
+    {
+        return _serviceProvider.GetRequiredService<AppDbContext>();
     }
 
     public async Task<WallpaperItem?> ImportAsync(string sourceFilePath, CancellationToken ct = default)
@@ -64,8 +70,9 @@ public sealed class LibraryService
                 ValidationStatus = "Valid"
             };
 
-            _db.WallpaperItems.Add(item);
-            await _db.SaveChangesAsync(ct);
+            await using var db = CreateDbContext();
+            db.WallpaperItems.Add(item);
+            await db.SaveChangesAsync(ct);
             _logger.Info($"Imported: {fileName} -> {managedFileName}");
             return item;
         }
@@ -78,19 +85,22 @@ public sealed class LibraryService
 
     public async Task<List<WallpaperItem>> GetAllAsync(CancellationToken ct = default)
     {
-        return await _db.WallpaperItems
+        await using var db = CreateDbContext();
+        return await db.WallpaperItems
             .OrderByDescending(w => w.ImportedAtUtc)
             .ToListAsync(ct);
     }
 
     public async Task<WallpaperItem?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
-        return await _db.WallpaperItems.FindAsync(new object[] { id }, ct);
+        await using var db = CreateDbContext();
+        return await db.WallpaperItems.FindAsync(new object[] { id }, ct);
     }
 
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
-        var item = await _db.WallpaperItems.FindAsync(new object[] { id }, ct);
+        await using var db = CreateDbContext();
+        var item = await db.WallpaperItems.FindAsync(new object[] { id }, ct);
         if (item == null) return false;
 
         if (File.Exists(item.ManagedFilePath))
@@ -102,11 +112,11 @@ public sealed class LibraryService
         if (!string.IsNullOrEmpty(item.ThumbnailPath) && File.Exists(item.ThumbnailPath))
         {
             try { File.Delete(item.ThumbnailPath); }
-            catch { }
+            catch (Exception ex) { _logger.Warn($"Failed to delete thumbnail: {ex.Message}"); }
         }
 
-        _db.WallpaperItems.Remove(item);
-        await _db.SaveChangesAsync(ct);
+        db.WallpaperItems.Remove(item);
+        await db.SaveChangesAsync(ct);
         _logger.Info($"Deleted wallpaper: {item.DisplayName}");
         return true;
     }

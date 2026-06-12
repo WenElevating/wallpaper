@@ -50,9 +50,16 @@ public sealed class ExplorerWatcher : IDisposable
 
             Task.Run(async () =>
             {
-                await Task.Delay(1000);
-                _desktopHost.Attach();
-                ExplorerRestarted?.Invoke(this, EventArgs.Empty);
+                try
+                {
+                    await Task.Delay(1000);
+                    _desktopHost.Attach();
+                    ExplorerRestarted?.Invoke(this, EventArgs.Empty);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.Error("Explorer restart handler failed", ex);
+                }
             });
         }
         else if (currentPid == 0 && _lastExplorerPid != 0)

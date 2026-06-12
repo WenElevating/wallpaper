@@ -37,6 +37,10 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool GetMonitorInfoW(IntPtr hMonitor, ref MONITORINFO lpmi);
 
+    [DllImport("user32.dll", EntryPoint = "GetMonitorInfoW", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetMonitorInfoExW(IntPtr hMonitor, ref MONITORINFOEXW lpmi);
+
     [LibraryImport("user32.dll")]
     internal static partial IntPtr GetForegroundWindow();
 
@@ -88,7 +92,7 @@ internal static partial class NativeMethods
     internal const uint SWP_SHOWWINDOW = 0x0040;
     internal const int SW_HIDE = 0;
     internal const int SW_SHOW = 5;
-    internal static readonly IntPtr HWND_BOTTOM = new(-1);
+    internal static readonly IntPtr HWND_BOTTOM = new(1);
     internal static readonly IntPtr HWND_TOPMOST = new(-1);
     internal const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
     internal const int SM_CXSCREEN = 0;
@@ -113,6 +117,17 @@ internal static partial class NativeMethods
         public RECT rcMonitor;
         public RECT rcWork;
         public uint dwFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct MONITORINFOEXW
+    {
+        public int cbSize;
+        public RECT rcMonitor;
+        public RECT rcWork;
+        public uint dwFlags;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public string szDevice;
     }
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]

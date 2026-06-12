@@ -69,11 +69,17 @@ public sealed class FullscreenDetector : IDisposable
             return false;
         }
 
-        int screenWidth = NativeMethods.GetSystemMetrics(NativeMethods.SM_CXSCREEN);
-        int screenHeight = NativeMethods.GetSystemMetrics(NativeMethods.SM_CYSCREEN);
+        // Check if the window covers any monitor fully
+        foreach (var (monRect, _) in _monitorManager.GetMonitorRects())
+        {
+            if (rect.Left <= monRect.Left && rect.Top <= monRect.Top &&
+                rect.Right >= monRect.Right && rect.Bottom >= monRect.Bottom)
+            {
+                return true;
+            }
+        }
 
-        return rect.Left <= 0 && rect.Top <= 0 &&
-               rect.Right >= screenWidth && rect.Bottom >= screenHeight;
+        return false;
     }
 
     public void Dispose()
