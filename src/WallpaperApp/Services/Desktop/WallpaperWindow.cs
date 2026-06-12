@@ -11,6 +11,8 @@ public sealed class WallpaperWindow : IDisposable
     private bool _isFallback;
     private bool _disposed;
 
+    public int Width { get; private set; }
+    public int Height { get; private set; }
     public IntPtr Handle => _hwnd;
     public bool IsFallback => _isFallback;
 
@@ -53,6 +55,8 @@ public sealed class WallpaperWindow : IDisposable
 
     public void Resize(int x, int y, int width, int height)
     {
+        Width = width;
+        Height = height;
         if (_hwnd == IntPtr.Zero) return;
         NativeMethods.SetWindowPos(
             _hwnd, IntPtr.Zero,

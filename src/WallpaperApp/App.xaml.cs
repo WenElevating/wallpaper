@@ -59,6 +59,7 @@ public partial class App : Application
         services.AddSingleton<LibraryService>();
         services.AddSingleton<ThumbnailService>();
         services.AddSingleton<GifTranscoder>();
+        // PlaybackManager constructs D2dRenderer per-session using WallpaperWindow HWND
         services.AddSingleton<PlaybackManager>();
         services.AddSingleton<DesktopHost>();
         services.AddSingleton<MonitorManager>();
