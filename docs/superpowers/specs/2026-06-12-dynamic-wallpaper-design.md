@@ -41,31 +41,31 @@ The approved product requirements are:
 
 ### Chosen approach
 
-Use a native Windows architecture built with WPF for the application shell and Windows desktop integration APIs for wallpaper placement. The wallpaper rendering surface is a Win32 window using DirectComposition or Direct3D swap chain, not WPF rendering pipeline. Media Foundation is the primary playback backend, with a strict interface abstraction so a libmpv backend can be validated as a stub in Phase 1.
+Use a native Windows architecture built with WPF for the application shell and Windows desktop integration APIs for wallpaper placement. The wallpaper rendering surface is a Win32 window using DirectComposition or Direct3D swap chain, not WPF rendering pipeline. FFmpeg (via P/Invoke to existing DLLs in `lib/ffmpeg/`) is the primary playback backend, with Media Foundation as a fallback path for systems where FFmpeg has issues.
 
 ### Why this approach
 
 - WPF provides a mature Windows desktop UI stack with good tray and settings support.
 - Native Windows APIs make it practical to place wallpaper content behind desktop icons.
-- Media Foundation offers hardware-accelerated playback for common Windows video scenarios.
+- FFmpeg provides broad codec coverage (MP4, WebM, MKV, MOV, AVI) and mature frame-level control, avoiding the codec compatibility gaps of Media Foundation.
 - Separating WPF (management UI) from wallpaper rendering (native Win32 surface) avoids WPF airspace and performance bottlenecks.
-- The playback interface abstraction is validated early with a libmpv stub to prove the design is extensible before MF limitations surface.
+- The existing FFmpeg 7.x DLLs in `lib/ffmpeg/` are ready for P/Invoke integration.
 
 ### Alternatives considered
 
-#### 1. WPF + FFmpeg/libmpv
+#### 1. Media Foundation fallback
 
 Pros:
-- Strong codec compatibility.
-- Good future path for more advanced media features.
+- System-built, no additional DLL dependencies.
+- Hardware acceleration available on most Windows installs.
 
 Cons:
-- More packaging complexity.
-- More native dependency management.
-- Higher implementation and maintenance cost for a v1 product.
+- Codec compatibility depends on OS version and installed codecs.
+- Frame-level loop control is weaker than FFmpeg.
+- Error diagnostics are difficult.
 
 Decision:
-- Not chosen for v1, but the media backend will be abstracted so this can be introduced later.
+- Retained as a fallback backend. If FFmpeg has issues on a specific system, the app can degrade to MF for supported formats (MP4 with H.264/H.265). The playback interface abstraction supports this without UI changes.
 
 #### 2. WPF + WebView2 / HTML5 video
 
@@ -155,13 +155,19 @@ Responsibilities:
 - Expose decode and render as separable concerns to allow future shared-decode multi-monitor output.
 
 Technology choice:
-- Primary backend: Media Foundation for video playback.
-- Known MF limitations: codec compatibility depends on OS version and installed codecs; frame-level loop control and error diagnostics are weaker than FFmpeg/libmpv.
-- GIF support: imported GIFs are pre-transcoded to MP4 (H.264 + silent audio track) during import. This avoids per-frame bitmap memory overhead and variable frame-delay complexity at runtime. The import pipeline runs a background transcode with progress reporting and timeout handling.
+- Primary backend: FFmpeg via P/Invoke to DLLs in `lib/ffmpeg/` (avcodec-61, avformat-61, avutil-59, etc.).
+- Fallback backend: Media Foundation for systems where FFmpeg DLLs fail to load.
+- GIF support: imported GIFs are pre-transcoded to MP4 (H.264 silent) during import. This avoids per-frame bitmap memory overhead and variable frame-delay complexity at runtime. The import pipeline runs a background transcode with progress reporting.
+
+GIF transcode timeout behavior:
+- Timeout after 5 minutes for the transcode process.
+- On timeout: cancel the ffmpeg process, delete any partial output file, remove the library record if it was inserted, and report a per-file error to the user ("Transcode timed out — file may be too large or complex").
+- The user can retry with a smaller GIF or trim the file.
 
 Architecture rule:
 - Playback is exposed behind `IWallpaperPlaybackBackend` interface.
-- A libmpv backend stub must be implemented in Phase 1 to validate the interface is flexible enough for future replacement. This stub does not need to be feature-complete but must prove the contract works with an alternative decoder.
+- FFmpeg backend implements this interface using direct P/Invoke calls to `lib/ffmpeg/*.dll`.
+- The interface contract must be validated in Phase 1 with both backends (FFmpeg primary, MF fallback) to ensure runtime behavior — not just compile-time correctness — is sound.
 
 ### 5.4 Desktop Host
 
@@ -238,7 +244,7 @@ Persistence:
 2. App validates extension against supported list.
 3. App checks available disk space against file size. If free space < 2x file size, warn the user before proceeding.
 4. App validates playback compatibility by attempting a short decode test.
-5. For GIF files, app pre-transcodes to MP4 (H.264 silent) with progress reporting. Timeout after 5 minutes for very large GIFs.
+5. For GIF files, app pre-transcodes to MP4 (H.264 silent) via ffmpeg with progress reporting. Timeout after 5 minutes. On timeout: cancel process, delete partial output, report error to user.
 6. App copies the asset (or transcoded result) into the managed library.
 7. App extracts thumbnail and media metadata.
 8. App inserts a library record.
@@ -486,24 +492,25 @@ Mitigation:
 ### 13.2 Codec compatibility variance
 
 Reason:
-- Media Foundation codec support depends on installed codecs and OS capabilities.
-- WebM (VP8/VP9), MKV, and MOV may lack native MF support on some Windows 10 installations.
+- Even with FFmpeg, some exotic codec profiles or broken containers may fail.
+- Media Foundation fallback has its own codec gaps.
 
 Mitigation:
+- FFmpeg handles the vast majority of formats natively (MP4, WebM, MKV, MOV, AVI).
 - Validate files during import with a short decode test.
-- Clearly communicate which formats are "best-effort" vs guaranteed.
-- Keep playback backend replaceable so libmpv can be added for broader codec coverage.
+- Clearly communicate which formats are "guaranteed" vs "best-effort".
+- Fall back to Media Foundation if FFmpeg DLLs fail to load on a specific system.
 
-### 13.3 Media Foundation limitations
+### 13.3 Media Foundation limitations (fallback path)
 
 Reason:
-- MF has weaker frame-level loop control compared to libmpv/FFmpeg.
+- MF has weaker frame-level loop control compared to FFmpeg.
 - MF error codes and state machine are difficult to diagnose.
 - Some container/codec combinations fail silently or produce visual artifacts.
 
 Mitigation:
-- Abstract the playback backend behind `IWallpaperPlaybackBackend`.
-- Implement a libmpv stub in Phase 1 to validate the interface and provide a fallback path.
+- FFmpeg is the primary backend, so MF limitations only affect fallback scenarios.
+- Abstract the playback backend behind `IWallpaperPlaybackBackend` so the switch is transparent.
 - Wrap MF errors into user-friendly messages at the UI boundary.
 
 ### 13.4 WPF and high-performance video composition boundaries
@@ -524,9 +531,10 @@ Mitigation:
 - App shell (WPF main window, tray integration)
 - Logging framework and basic recovery (Explorer restart detection + host rebuild)
 - Local library import with disk space check and validation
-- Single-monitor MP4 playback
+- Single-monitor MP4 playback via FFmpeg
 - Desktop host placement (WorkerW + fallback)
-- libmpv backend stub (interface validation only)
+- FFmpeg P/Invoke integration with `lib/ffmpeg/` DLLs
+- MF fallback backend for systems where FFmpeg fails
 
 ### Phase 2
 
@@ -546,6 +554,8 @@ Mitigation:
 
 - Package format: MSIX for Windows Store or sideload, with Inno Setup as fallback for non-Store distribution.
 - .NET runtime: target .NET 8 or later. The installer must check for the runtime and prompt installation if missing.
+- Auto-start under MSIX: must use the `windows.startupTask` extension in the AppxManifest.xml, declaring a unique `StartupTaskId`. The app calls `StartupTask.GetAsync()` to check state and `StartupTask.RequestEnableAsync()` to toggle. This differs from traditional Win32 registry-based auto-start — the two approaches are not interchangeable, and the code must handle both paths depending on installation method.
+- Auto-start under Inno Setup: uses the standard `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` registry key.
 - Update mechanism: v1 includes a manual "check for updates" action in settings. Auto-update is not in v1 scope.
 - Portable mode: not supported in v1. The app requires installation to register auto-start and tray integration properly.
 
@@ -554,15 +564,15 @@ Mitigation:
 The following decisions are intentionally fixed to remove planning ambiguity:
 - Windows only, minimum version Windows 10 1903+.
 - C# WPF application shell; wallpaper rendering via Win32 HWND + DirectComposition/D3D11, not WPF rendering pipeline.
-- Media Foundation as the primary video backend, with libmpv stub validation in Phase 1.
+- FFmpeg as the primary playback backend (DLLs in `lib/ffmpeg/`), Media Foundation as fallback.
+- GIF pre-transcoded to MP4 on import; timeout cancels and cleans up on failure.
 - Managed local library copy on import by default.
-- GIF pre-transcoded to MP4 on import.
 - Silent playback only.
 - Global pause when any fullscreen app is active (V1 runtime policy); data model supports per-monitor pause.
 - Independent render instance per monitor; decode and render decoupled for future shared-decode support.
 - Monitor identity uses EDID hash + connection type as primary key.
 - SQLite schema versioning with migration scripts from v1.
-- MSIX or Inno Setup packaging, .NET 8+.
+- MSIX uses `windows.startupTask` for auto-start; Inno Setup uses registry key. Code handles both.
 - No playlists, online sources, or web wallpapers in v1.
 
 ## 16. Implementation Planning Readiness
@@ -570,8 +580,8 @@ The following decisions are intentionally fixed to remove planning ambiguity:
 This spec is intended to be ready for implementation planning. The expected planning outcome should break work into modules aligned with:
 - UI shell and tray
 - Library storage, import pipeline, and schema migration
-- Playback abstraction, Media Foundation backend, and libmpv stub
+- Playback abstraction, FFmpeg backend (P/Invoke to `lib/ffmpeg/`), and MF fallback
 - Desktop host / Explorer integration and fallback
 - Monitor management, fullscreen detection, and per-monitor pause data model
-- Settings, startup, logging, recovery, and diagnostics
+- Settings, startup (MSIX `windows.startupTask` + registry), logging, recovery, and diagnostics
 - Packaging and distribution (MSIX/Inno Setup, .NET 8+ runtime check)
