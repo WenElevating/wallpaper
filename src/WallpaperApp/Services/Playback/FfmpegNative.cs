@@ -98,9 +98,9 @@ internal static partial class FfmpegNative
 
     [LibraryImport(SwScale)]
     internal static partial int sws_scale(
-        IntPtr context, IntPtr srcSlice, int[] srcStride,
+        IntPtr context, IntPtr[] srcSlice, int[] srcStride,
         int srcSliceY, int srcSliceH,
-        IntPtr dstSlice, int[] dstStride);
+        IntPtr[] dstSlice, int[] dstStride);
 
     internal const int AVMEDIA_TYPE_VIDEO = 0;
     internal const int AV_CODEC_ID_NONE = 0;
