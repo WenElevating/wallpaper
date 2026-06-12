@@ -41,14 +41,15 @@ The approved product requirements are:
 
 ### Chosen approach
 
-Use a native Windows architecture built with WPF for the application shell and Windows desktop integration APIs for wallpaper placement. Use Media Foundation as the primary playback backend for video rendering, with a fallback abstraction point so an alternative decoder can be added later if required.
+Use a native Windows architecture built with WPF for the application shell and Windows desktop integration APIs for wallpaper placement. The wallpaper rendering surface is a Win32 window using DirectComposition or Direct3D swap chain, not WPF rendering pipeline. Media Foundation is the primary playback backend, with a strict interface abstraction so a libmpv backend can be validated as a stub in Phase 1.
 
 ### Why this approach
 
 - WPF provides a mature Windows desktop UI stack with good tray and settings support.
 - Native Windows APIs make it practical to place wallpaper content behind desktop icons.
 - Media Foundation offers hardware-accelerated playback for common Windows video scenarios.
-- This keeps the application Windows-focused, efficient, and aligned with the product goals.
+- Separating WPF (management UI) from wallpaper rendering (native Win32 surface) avoids WPF airspace and performance bottlenecks.
+- The playback interface abstraction is validated early with a libmpv stub to prove the design is extensible before MF limitations surface.
 
 ### Alternatives considered
 
@@ -148,16 +149,19 @@ V1 decision:
 
 Responsibilities:
 - Open, decode, and render video or GIF content.
-- Loop playback.
+- Loop playback with frame-accurate seek for seamless looping.
 - Apply mute-by-design behavior.
 - Support fit modes such as fill, fit, stretch, and center crop.
+- Expose decode and render as separable concerns to allow future shared-decode multi-monitor output.
 
 Technology choice:
 - Primary backend: Media Foundation for video playback.
-- GIF support: dedicated image animation path or conversion into a frame-timed playback path managed by the engine abstraction.
+- Known MF limitations: codec compatibility depends on OS version and installed codecs; frame-level loop control and error diagnostics are weaker than FFmpeg/libmpv.
+- GIF support: imported GIFs are pre-transcoded to MP4 (H.264 + silent audio track) during import. This avoids per-frame bitmap memory overhead and variable frame-delay complexity at runtime. The import pipeline runs a background transcode with progress reporting and timeout handling.
 
 Architecture rule:
-- Playback is exposed behind an interface so a future backend such as libmpv can replace or augment Media Foundation without a UI rewrite.
+- Playback is exposed behind `IWallpaperPlaybackBackend` interface.
+- A libmpv backend stub must be implemented in Phase 1 to validate the interface is flexible enough for future replacement. This stub does not need to be feature-complete but must prove the contract works with an alternative decoder.
 
 ### 5.4 Desktop Host
 
@@ -167,11 +171,20 @@ Responsibilities:
 - Recreate the host when Explorer restarts or desktop topology changes.
 
 Technical direction:
-- Use the common WorkerW / Progman wallpaper-hosting technique on Windows.
-- The application creates a child or hosted window positioned in the desktop wallpaper layer, not above normal application windows.
+- Use the WorkerW / Progman wallpaper-hosting technique on Windows.
+- The application sends `0x052C` to Progman to spawn a WorkerW, finds it via `FindWindowEx`, then parents the wallpaper rendering HWND into it.
+- The wallpaper rendering HWND uses DirectComposition or Direct3D11 swap chain for GPU-accelerated frame presentation. It does not use WPF rendering.
+
+Fallback strategy:
+- If WorkerW discovery or attachment fails (e.g. `SendMessage(Progman, 0x052C, ...)` returns failure), create a `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE` window with `HWND_BOTTOM` Z-order as a degraded overlay.
+- Log the failure and show a persistent tray notification indicating degraded mode.
+- Retry WorkerW attachment on a timer (every 60 seconds) until Explorer restarts or the shell stabilizes.
+
+Minimum supported version:
+- Windows 10 version 1903 (build 18362) and later. Earlier versions are not supported due to shell behavior differences.
 
 Risk note:
-- Explorer shell behavior is implementation-sensitive across Windows versions, so this subsystem must be isolated and resilient.
+- Explorer shell behavior is implementation-sensitive across Windows versions. Windows 11 24H2+ has had shell changes that may affect WorkerW discovery. This subsystem must be isolated and resilient.
 
 ### 5.5 Monitor & Session Manager
 
@@ -182,8 +195,18 @@ Responsibilities:
 
 V1 behavior:
 - Each monitor can be assigned its own wallpaper.
-- Playback instances are independent per monitor.
-- If the same asset is used on multiple monitors, each monitor still gets its own render instance to keep implementation simple and reliable.
+- Each monitor gets its own render instance (swap chain + presentation).
+- If the same asset is used on multiple monitors, each monitor gets its own decode instance for simplicity. However, the architecture decouples `IDecoder` from `IRenderer` so a future shared-decode path (one decode, N swap chains) can be introduced without changing the monitor manager.
+
+Monitor identity strategy:
+- Primary key: EDID hash + connection type (HDMI/DP/etc.) combination, which survives port swaps better than DeviceName alone.
+- Fallback: DeviceName as secondary match.
+- If no match is found after hot-plug, surface a "reassign wallpapers" UI prompt rather than silently losing assignments.
+
+Fullscreen pause strategy:
+- The `PausedByFullscreen` field in the monitor assignment entity is per-monitor, not global.
+- V1 default behavior: global pause (any fullscreen on any monitor pauses all). This is a runtime policy, not a data model constraint.
+- The data model supports per-monitor pause so the policy can be relaxed in a future version without schema changes.
 
 ### 5.6 Settings, Startup, and Diagnostics
 
@@ -212,11 +235,15 @@ Persistence:
 ### 6.2 Import wallpaper
 
 1. User chooses files through a picker or drag-and-drop.
-2. App validates extension and playback compatibility.
-3. App copies the asset into the managed library.
-4. App extracts thumbnail and media metadata.
-5. App inserts a library record.
-6. App reports any failures per file.
+2. App validates extension against supported list.
+3. App checks available disk space against file size. If free space < 2x file size, warn the user before proceeding.
+4. App validates playback compatibility by attempting a short decode test.
+5. For GIF files, app pre-transcodes to MP4 (H.264 silent) with progress reporting. Timeout after 5 minutes for very large GIFs.
+6. App copies the asset (or transcoded result) into the managed library.
+7. App extracts thumbnail and media metadata.
+8. App inserts a library record.
+9. App reports any failures per file.
+10. Files exceeding 2GB display a soft warning suggesting the user may want to trim or compress the video, but still allow import.
 
 ### 6.3 Assign wallpaper to monitors
 
@@ -227,12 +254,10 @@ Persistence:
 
 ### 6.4 Fullscreen pause behavior
 
-1. App detects a fullscreen foreground application on a monitor.
-2. Wallpaper playback pauses on the affected monitor.
-3. When fullscreen ends, playback resumes from the loop state.
-
-V1 decision:
-- Pause behavior is global by default for simplicity and predictable UX. If any fullscreen application is detected, all wallpaper playback pauses.
+1. App detects a fullscreen foreground application on any monitor.
+2. V1: all wallpaper playback pauses globally.
+3. The `PausedByFullscreen` flag on each monitor assignment is set individually, so the data model is ready for per-monitor pause in a future version.
+4. When fullscreen ends, playback resumes from the loop state.
 
 ### 6.5 Tray control flow
 
@@ -290,8 +315,9 @@ Clarification:
 ### 7.7 Fullscreen detection
 
 - Detect exclusive fullscreen and borderless fullscreen foreground windows as best as practical.
-- Pause all wallpaper playback while fullscreen content is active.
+- V1 behavior: pause all wallpaper playback while any fullscreen content is active.
 - Resume automatically when fullscreen content exits.
+- The per-monitor `PausedByFullscreen` flag is maintained in the data model so the global-vs-per-monitor policy can be switched via settings in a future version.
 
 ## 8. Non-Functional Requirements
 
@@ -301,6 +327,15 @@ Clarification:
 - Prefer GPU-accelerated decode and presentation when available.
 - Avoid unnecessary CPU polling in monitor and fullscreen detection.
 - Startup to active wallpaper restore should feel immediate after login.
+
+Quantified targets (1080p MP4 on mid-range hardware):
+- CPU usage during idle desktop playback: ≤ 3%.
+- GPU decode engine usage: ≤ 15%.
+- Memory working set per monitor: ≤ 200MB.
+- Import of 1GB file to managed library: ≤ 30 seconds on SSD.
+- Time from login to wallpaper visible: ≤ 5 seconds.
+
+These are targets, not hard guarantees — they will be validated during Phase 1 and used as optimization baselines.
 
 ### 8.2 Stability
 
@@ -319,7 +354,7 @@ Clarification:
 
 - Desktop hosting, playback, and library management must remain separate modules.
 - The playback backend must be abstracted.
-- Settings and library data should be easy to migrate in future versions.
+- SQLite schema must include a version table and a migration mechanism from v1.
 
 ## 9. Data Design
 
@@ -337,6 +372,7 @@ Suggested fields:
 - `Height`
 - `ContainerFormat`
 - `CodecSummary`
+- `FileBytes`
 - `ImportedAtUtc`
 - `LastUsedAtUtc`
 - `ValidationStatus`
@@ -345,10 +381,11 @@ Suggested fields:
 
 Suggested fields:
 - `Id`
-- `MonitorKey`
+- `MonitorKey` (EDID hash + connection type)
+- `MonitorDeviceName` (secondary fallback identifier)
 - `WallpaperId`
 - `FitMode`
-- `PausedByFullscreen`
+- `PausedByFullscreen` (per-monitor flag; V1 uses global pause policy at runtime)
 - `UpdatedAtUtc`
 
 ### 9.3 App settings
@@ -361,6 +398,14 @@ Suggested settings:
 - Hardware acceleration enabled
 - Log verbosity
 - Theme preference
+
+### 9.4 Schema migration
+
+- A `SchemaVersion` table stores the current schema version number.
+- On startup, the app compares the stored version against the code's expected version.
+- If the version is behind, a sequence of ordered SQL migration scripts is executed.
+- Each migration script is idempotent and wrapped in a transaction.
+- Before running migrations, the app backs up the existing database file.
 
 ## 10. Error Handling And Recovery
 
@@ -430,72 +475,103 @@ Must log:
 
 Reason:
 - The WorkerW / Progman hosting pattern is common but implementation-sensitive.
+- Windows 11 24H2+ has had shell changes that may affect WorkerW discovery.
 
 Mitigation:
 - Isolate the desktop host subsystem.
 - Build explicit recovery logic for Explorer restarts.
-- Test on supported Windows 10 and Windows 11 versions early.
+- Implement fallback to `WS_EX_TOOLWINDOW` bottom-Z overlay when WorkerW fails.
+- Test on Windows 10 1903+ and Windows 11 early.
 
 ### 13.2 Codec compatibility variance
 
 Reason:
-- Media Foundation support depends on installed codecs and OS capabilities.
+- Media Foundation codec support depends on installed codecs and OS capabilities.
+- WebM (VP8/VP9), MKV, and MOV may lack native MF support on some Windows 10 installations.
 
 Mitigation:
-- Validate files during import.
-- Message support clearly.
-- Keep playback backend replaceable.
+- Validate files during import with a short decode test.
+- Clearly communicate which formats are "best-effort" vs guaranteed.
+- Keep playback backend replaceable so libmpv can be added for broader codec coverage.
 
-### 13.3 WPF and high-performance video composition boundaries
+### 13.3 Media Foundation limitations
 
 Reason:
-- WPF itself is not the playback engine and should not become the frame rendering bottleneck.
+- MF has weaker frame-level loop control compared to libmpv/FFmpeg.
+- MF error codes and state machine are difficult to diagnose.
+- Some container/codec combinations fail silently or produce visual artifacts.
 
 Mitigation:
-- Keep video rendering in a native-capable playback layer.
-- Avoid designing around a pure WPF media stack if profiling shows instability.
+- Abstract the playback backend behind `IWallpaperPlaybackBackend`.
+- Implement a libmpv stub in Phase 1 to validate the interface and provide a fallback path.
+- Wrap MF errors into user-friendly messages at the UI boundary.
+
+### 13.4 WPF and high-performance video composition boundaries
+
+Reason:
+- WPF rendering pipeline is not suitable for 4K 60fps wallpaper rendering.
+- WPF airspace issues and thread model add complexity if video is embedded in WPF windows.
+
+Mitigation:
+- Wallpaper rendering uses a standalone Win32 HWND with DirectComposition or D3D11 swap chain.
+- WPF is used only for management UI (main window, settings, tray menu).
+- The two surfaces are completely decoupled — WPF never renders into the wallpaper window.
 
 ## 14. Delivery Phasing
 
 ### Phase 1
 
-- App shell
-- Tray integration
-- Local library import
+- App shell (WPF main window, tray integration)
+- Logging framework and basic recovery (Explorer restart detection + host rebuild)
+- Local library import with disk space check and validation
 - Single-monitor MP4 playback
-- Desktop host placement
+- Desktop host placement (WorkerW + fallback)
+- libmpv backend stub (interface validation only)
 
 ### Phase 2
 
-- GIF support
+- GIF support (pre-transcode on import)
 - Multi-monitor assignment
 - Startup restore
-- Fullscreen pause/resume
+- Fullscreen pause/resume (global policy, per-monitor data model)
 
 ### Phase 3
 
-- Polished UI
+- Polished UI (themes, animations)
 - Diagnostics and recovery hardening
-- Expanded compatibility validation
+- Expanded compatibility validation (WebM, MKV, MOV edge cases)
+- Performance profiling and optimization against quantified targets
+
+## 14.1 Distribution and Packaging
+
+- Package format: MSIX for Windows Store or sideload, with Inno Setup as fallback for non-Store distribution.
+- .NET runtime: target .NET 8 or later. The installer must check for the runtime and prompt installation if missing.
+- Update mechanism: v1 includes a manual "check for updates" action in settings. Auto-update is not in v1 scope.
+- Portable mode: not supported in v1. The app requires installation to register auto-start and tray integration properly.
 
 ## 15. Open Decisions Resolved In This Spec
 
 The following decisions are intentionally fixed to remove planning ambiguity:
-- Windows only.
-- C# WPF application shell.
-- Media Foundation as the primary video backend.
+- Windows only, minimum version Windows 10 1903+.
+- C# WPF application shell; wallpaper rendering via Win32 HWND + DirectComposition/D3D11, not WPF rendering pipeline.
+- Media Foundation as the primary video backend, with libmpv stub validation in Phase 1.
 - Managed local library copy on import by default.
+- GIF pre-transcoded to MP4 on import.
 - Silent playback only.
-- Global pause when any fullscreen app is active.
-- Independent playback instance per monitor.
+- Global pause when any fullscreen app is active (V1 runtime policy); data model supports per-monitor pause.
+- Independent render instance per monitor; decode and render decoupled for future shared-decode support.
+- Monitor identity uses EDID hash + connection type as primary key.
+- SQLite schema versioning with migration scripts from v1.
+- MSIX or Inno Setup packaging, .NET 8+.
 - No playlists, online sources, or web wallpapers in v1.
 
 ## 16. Implementation Planning Readiness
 
 This spec is intended to be ready for implementation planning. The expected planning outcome should break work into modules aligned with:
 - UI shell and tray
-- Library storage and import pipeline
-- Playback abstraction and Media Foundation backend
-- Desktop host / Explorer integration
-- Monitor management and fullscreen detection
-- Settings, startup, logging, and recovery
+- Library storage, import pipeline, and schema migration
+- Playback abstraction, Media Foundation backend, and libmpv stub
+- Desktop host / Explorer integration and fallback
+- Monitor management, fullscreen detection, and per-monitor pause data model
+- Settings, startup, logging, recovery, and diagnostics
+- Packaging and distribution (MSIX/Inno Setup, .NET 8+ runtime check)
