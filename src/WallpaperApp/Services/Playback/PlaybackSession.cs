@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using WallpaperApp.Services.Logging;
 
 namespace WallpaperApp.Services.Playback;
@@ -6,6 +7,7 @@ public sealed class PlaybackSession : IDisposable
 {
     private readonly FileLogger _logger;
     private readonly IPlaybackBackend _backend;
+    private readonly IFrameRenderer _renderer;
     private readonly Guid _monitorId;
     private CancellationTokenSource? _renderCts;
     private Task? _renderTask;
@@ -16,10 +18,11 @@ public sealed class PlaybackSession : IDisposable
     public bool IsPaused => _backend.IsPaused;
     public IPlaybackBackend Backend => _backend;
 
-    public PlaybackSession(Guid monitorId, IPlaybackBackend backend, FileLogger logger)
+    public PlaybackSession(Guid monitorId, IPlaybackBackend backend, IFrameRenderer renderer, FileLogger logger)
     {
         _monitorId = monitorId;
         _backend = backend;
+        _renderer = renderer;
         _logger = logger;
     }
 
@@ -49,34 +52,52 @@ public sealed class PlaybackSession : IDisposable
         _logger.Info($"Session stopped for monitor {_monitorId}");
     }
 
-    public async Task PauseAsync(CancellationToken ct = default)
-    {
-        await _backend.PauseAsync(ct);
-    }
-
-    public async Task ResumeAsync(CancellationToken ct = default)
-    {
-        await _backend.ResumeAsync(ct);
-    }
+    public Task PauseAsync(CancellationToken ct = default) => _backend.PauseAsync(ct);
+    public Task ResumeAsync(CancellationToken ct = default) => _backend.ResumeAsync(ct);
 
     private async Task RenderLoopAsync(CancellationToken ct)
     {
-        var frameBudget = TimeSpan.FromMilliseconds(16);
+        await _backend.PlayAsync(ct);
+        var lastPts = -1L;
+        var sw = new Stopwatch();
+
         while (!ct.IsCancellationRequested && _backend.IsPlaying)
         {
-            if (!_backend.IsPaused)
+            if (_backend.IsPaused)
             {
-                var frame = await _backend.NextFrameAsync(ct);
-                if (frame == null)
-                {
-                    // End of stream — seek back to start and loop
-                    await _backend.SeekAsync(TimeSpan.Zero, ct);
-                    await _backend.PlayAsync(ct);
-                    continue;
-                }
-                frame.Dispose();
+                await Task.Delay(50, ct);
+                continue;
             }
-            await Task.Delay(frameBudget, ct);
+
+            var frame = await _backend.NextFrameAsync(ct);
+            if (frame == null)
+            {
+                await _backend.SeekAsync(TimeSpan.Zero, ct);
+                await _backend.PlayAsync(ct);
+                lastPts = -1;
+                continue;
+            }
+
+            if (lastPts > 0 && frame.PtsUs > lastPts)
+            {
+                var frameDurationUs = frame.PtsUs - lastPts;
+                var elapsedUs = sw.ElapsedTicks * 1_000_000L / Stopwatch.Frequency;
+                var waitUs = Math.Max(0L, frameDurationUs - elapsedUs);
+                if (waitUs > 0)
+                    await Task.Delay((int)(waitUs / 1000), ct);
+            }
+
+            sw.Restart();
+            lastPts = frame.PtsUs;
+
+            var ok = _renderer.Present(frame);
+            frame.Dispose();
+
+            if (!ok)
+            {
+                _logger.Warn($"Render failed for monitor {_monitorId}, stopping");
+                break;
+            }
         }
     }
 
@@ -86,6 +107,7 @@ public sealed class PlaybackSession : IDisposable
         _disposed = true;
         _renderCts?.Cancel();
         _renderCts?.Dispose();
+        _renderer.Dispose();
         _backend.Dispose();
     }
 }
