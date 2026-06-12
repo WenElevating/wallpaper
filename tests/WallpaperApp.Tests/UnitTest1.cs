@@ -1,4 +1,4 @@
-﻿namespace WallpaperApp.Tests;
+namespace WallpaperApp.Tests;
 
 public class UnitTest1
 {
