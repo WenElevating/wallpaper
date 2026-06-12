@@ -16,7 +16,7 @@ internal static partial class D2D1
     internal const int S_OK = 0;
     internal const int D2DERR_RECREATE_TARGET = unchecked((int)0x8899000C);
 
-    private static readonly Guid IID_ID2D1Factory = new("06152247-6f50-465a-9245-118bfd3b6007");
+    internal static readonly Guid IID_ID2D1Factory = new("06152247-6f50-465a-9245-118bfd3b6007");
 
     [DllImport(DllName)]
     internal static extern int D2D1CreateFactory(
