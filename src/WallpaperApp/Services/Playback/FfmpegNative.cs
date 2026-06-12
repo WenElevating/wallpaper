@@ -49,7 +49,7 @@ internal static partial class FfmpegNative
     internal static partial IntPtr avcodec_alloc_context3(IntPtr codec);
 
     [LibraryImport(AvCodec)]
-    internal static partial void avcodec_free_context(IntPtr avctx);
+    internal static partial void avcodec_free_context(ref IntPtr avctx);
 
     [LibraryImport(AvCodec)]
     internal static partial int avcodec_parameters_to_context(IntPtr avctx, IntPtr par);
@@ -70,13 +70,13 @@ internal static partial class FfmpegNative
     internal static partial IntPtr av_frame_alloc();
 
     [LibraryImport(AvUtil)]
-    internal static partial void av_frame_free(IntPtr frame);
+    internal static partial void av_frame_free(ref IntPtr frame);
 
     [LibraryImport(AvUtil)]
     internal static partial IntPtr av_packet_alloc();
 
     [LibraryImport(AvUtil)]
-    internal static partial void av_packet_free(IntPtr pkt);
+    internal static partial void av_packet_free(ref IntPtr pkt);
 
     [LibraryImport(AvUtil)]
     internal static partial void av_packet_unref(IntPtr pkt);

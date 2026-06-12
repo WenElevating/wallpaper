@@ -22,6 +22,14 @@ internal static class FfmpegOffsets
     internal const int WidthOffset       = 0x2C;  // int
     internal const int HeightOffset      = 0x30;  // int
 
+    // AVStream (avformat-61) — additional
+    internal const int StreamDurationOffset = 0x88;  // int64_t duration
+    internal const int StreamTimeBaseNum    = 0x50;  // int (AVRational.num)
+    internal const int StreamTimeBaseDen    = 0x54;  // int (AVRational.den)
+
+    // AVPacket (avcodec-61)
+    internal const int PacketStreamIndex    = 0x08;  // int stream_index
+
     // AVFrame (avutil-59)
     internal const int FrameData0          = 0x00;  // uint8_t* data[0]
     internal const int FrameData1          = 0x08;  // uint8_t* data[1]

@@ -110,7 +110,8 @@ public sealed class FfmpegBackend : IPlaybackBackend
                     return Fail("av_malloc failed for double buffers");
 
                 _timeBase = ReadTimeBase(streamPtr);
-                _durationUs = Marshal.ReadInt64(streamPtr, 0x88);
+                var streamDuration = Marshal.ReadInt64(streamPtr, FfmpegOffsets.StreamDurationOffset);
+                _durationUs = streamDuration * _timeBase.Num * 1_000_000 / _timeBase.Den;
 
                 _isOpen = true;
                 _logger.Info($"Opened: {filePath} ({_width}x{_height})");
@@ -178,7 +179,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
                         return null;
                     }
 
-                    var pktStreamIdx = Marshal.ReadInt32(_avPacket, 0x08);
+                    var pktStreamIdx = Marshal.ReadInt32(_avPacket, FfmpegOffsets.PacketStreamIndex);
                     if (pktStreamIdx != _videoStreamIndex)
                     {
                         FfmpegNative.av_packet_unref(_avPacket);
@@ -229,9 +230,9 @@ public sealed class FfmpegBackend : IPlaybackBackend
     private void Close()
     {
         if (_swsCtx != IntPtr.Zero) { FfmpegNative.sws_freeContext(_swsCtx); _swsCtx = IntPtr.Zero; }
-        if (_codecCtx != IntPtr.Zero) { FfmpegNative.avcodec_free_context(_codecCtx); _codecCtx = IntPtr.Zero; }
-        if (_avFrame != IntPtr.Zero) { FfmpegNative.av_frame_free(_avFrame); _avFrame = IntPtr.Zero; }
-        if (_avPacket != IntPtr.Zero) { FfmpegNative.av_packet_free(_avPacket); _avPacket = IntPtr.Zero; }
+        if (_codecCtx != IntPtr.Zero) { FfmpegNative.avcodec_free_context(ref _codecCtx); }
+        if (_avFrame != IntPtr.Zero) { FfmpegNative.av_frame_free(ref _avFrame); }
+        if (_avPacket != IntPtr.Zero) { FfmpegNative.av_packet_free(ref _avPacket); }
         if (_fmtCtx != IntPtr.Zero) { FfmpegNative.avformat_close_input(out _fmtCtx); }
         if (_bufferA != IntPtr.Zero) { FfmpegNative.av_free(_bufferA); _bufferA = IntPtr.Zero; }
         if (_bufferB != IntPtr.Zero) { FfmpegNative.av_free(_bufferB); _bufferB = IntPtr.Zero; }
@@ -247,9 +248,8 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
     private static AVRational ReadTimeBase(IntPtr streamPtr)
     {
-        // AVStream.time_base at offset 0x50 (avformat-61)
-        var num = Marshal.ReadInt32(streamPtr, 0x50);
-        var den = Marshal.ReadInt32(streamPtr, 0x54);
+        var num = Marshal.ReadInt32(streamPtr, FfmpegOffsets.StreamTimeBaseNum);
+        var den = Marshal.ReadInt32(streamPtr, FfmpegOffsets.StreamTimeBaseDen);
         return new AVRational(num, den);
     }
 

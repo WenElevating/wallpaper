@@ -109,6 +109,18 @@ internal static class FfmpegOffsets
     internal const int CodecIdOffset     = 0x08;  // int (AVCodecID)
     internal const int WidthOffset       = 0x2C;  // int
     internal const int HeightOffset      = 0x30;  // int
+
+    // AVFrame (avutil-59) — ABI-specific to FFmpeg 7.1 build
+    internal const int FrameData0          = 0x00;  // uint8_t* data[0]
+    internal const int FrameData1          = 0x08;  // uint8_t* data[1]
+    internal const int FrameData2          = 0x10;  // uint8_t* data[2]
+    internal const int FrameLinesize0      = 0x28;  // int linesize[0]
+    internal const int FrameLinesize1      = 0x2C;  // int linesize[1]
+    internal const int FrameLinesize2      = 0x30;  // int linesize[2]
+    internal const int FramePts            = 0x38;  // int64_t pts
+    internal const int FrameBestEffortPts  = 0xA8;  // int64_t best_effort_timestamp
+    internal const int FrameWidth          = 0x68;  // int width
+    internal const int FrameHeight         = 0x6C;  // int height
 }
 ```
 
@@ -329,7 +341,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
                     var recvRet = FfmpegNative.avcodec_receive_frame(_codecCtx, _avFrame);
                     if (recvRet < 0) continue;
 
-                    var pts = FfmpegNative.av_frame_get_best_effort_timestamp(_avFrame);
+                    var pts = Marshal.ReadInt64(_avFrame, FfmpegOffsets.FrameBestEffortPts);
 
                     // sws_scale to double-buffered BGRA
                     var activeBuffer = _useBufferA ? _bufferA : _bufferB;
@@ -337,12 +349,12 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
                     var srcData = new IntPtr[4];
                     var srcStride = new int[4];
-                    srcData[0] = FfmpegNative.av_frame_get_data(_avFrame, 0);
-                    srcData[1] = FfmpegNative.av_frame_get_data(_avFrame, 1);
-                    srcData[2] = FfmpegNative.av_frame_get_data(_avFrame, 2);
-                    srcStride[0] = FfmpegNative.av_frame_get_linesize(_avFrame, 0);
-                    srcStride[1] = FfmpegNative.av_frame_get_linesize(_avFrame, 1);
-                    srcStride[2] = FfmpegNative.av_frame_get_linesize(_avFrame, 2);
+                    srcData[0] = Marshal.ReadIntPtr(_avFrame, FfmpegOffsets.FrameData0);
+                    srcData[1] = Marshal.ReadIntPtr(_avFrame, FfmpegOffsets.FrameData1);
+                    srcData[2] = Marshal.ReadIntPtr(_avFrame, FfmpegOffsets.FrameData2);
+                    srcStride[0] = Marshal.ReadInt32(_avFrame, FfmpegOffsets.FrameLinesize0);
+                    srcStride[1] = Marshal.ReadInt32(_avFrame, FfmpegOffsets.FrameLinesize1);
+                    srcStride[2] = Marshal.ReadInt32(_avFrame, FfmpegOffsets.FrameLinesize2);
 
                     var dstData = new IntPtr[] { activeBuffer };
                     var dstStride = new int[] { _stride };
