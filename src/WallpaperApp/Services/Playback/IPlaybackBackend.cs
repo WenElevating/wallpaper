@@ -1,5 +1,3 @@
-using System.Runtime.InteropServices;
-
 namespace WallpaperApp.Services.Playback;
 
 public interface IPlaybackBackend : IDisposable
@@ -18,17 +16,29 @@ public interface IPlaybackBackend : IDisposable
     event EventHandler? EndOfStream;
 }
 
-public sealed class FrameData(IntPtr buffer, int width, int height, int stride, long presentationTimestampUs) : IDisposable
+public sealed class FrameData : IDisposable
 {
-    public IntPtr Buffer { get; } = buffer;
-    public int Width { get; } = width;
-    public int Height { get; } = height;
-    public int Stride { get; } = stride;
-    public long PresentationTimestampUs { get; } = presentationTimestampUs;
+    public IntPtr Buffer { get; }
+    public int Width { get; }
+    public int Height { get; }
+    public int Stride { get; }
+    public long PtsUs { get; }
+    private bool _disposed;
 
+    public FrameData(IntPtr buffer, int width, int height, int stride, long ptsUs)
+    {
+        Buffer = buffer;
+        Width = width;
+        Height = height;
+        Stride = stride;
+        PtsUs = ptsUs;
+    }
+
+    // Memory owned by FfmpegBackend double-buffer pool — Dispose marks consumed
+    // so renderer doesn't reuse stale references.
     public void Dispose()
     {
-        if (Buffer != IntPtr.Zero)
-            Marshal.FreeHGlobal(Buffer);
+        if (_disposed) return;
+        _disposed = true;
     }
 }
