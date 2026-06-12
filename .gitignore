@@ -1,1 +1,10 @@
 .firecrawl/
+.vs/
+bin/
+obj/
+*.user
+*.suo
+*.cache
+*.nupkg
+*.snupkg
+TestResults/
