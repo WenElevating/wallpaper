@@ -25,7 +25,7 @@ internal static partial class FfmpegNative
     internal static partial int avformat_find_stream_info(IntPtr ps, IntPtr options);
 
     [LibraryImport(AvFormat)]
-    internal static partial long av_find_best_stream(IntPtr ps, int mediaType, int wantedStreamNb, int relatedStream, ref IntPtr decoderRet, int flags);
+    internal static partial int av_find_best_stream(IntPtr ps, int mediaType, int wantedStreamNb, int relatedStream, ref IntPtr decoderRet, int flags);
 
     [LibraryImport(AvFormat)]
     internal static partial long av_seek_frame(IntPtr s, int streamIndex, long timestamp, int flags);
@@ -41,9 +41,6 @@ internal static partial class FfmpegNative
 
     [LibraryImport(AvFormat)]
     internal static partial int av_read_frame(IntPtr ps, IntPtr pkt);
-
-    [LibraryImport(AvFormat)]
-    internal static partial long av_get_stream_duration(IntPtr fmtCtx, int stream_index);
 
     [LibraryImport(AvCodec, StringMarshalling = StringMarshalling.Utf8)]
     internal static partial IntPtr avcodec_find_decoder(int id);
@@ -74,21 +71,6 @@ internal static partial class FfmpegNative
 
     [LibraryImport(AvUtil)]
     internal static partial void av_frame_free(IntPtr frame);
-
-    [LibraryImport(AvUtil)]
-    internal static partial int av_frame_get_width(IntPtr frame);
-
-    [LibraryImport(AvUtil)]
-    internal static partial int av_frame_get_height(IntPtr frame);
-
-    [LibraryImport(AvUtil)]
-    internal static partial long av_frame_get_best_effort_timestamp(IntPtr frame);
-
-    [LibraryImport(AvUtil)]
-    internal static partial IntPtr av_frame_get_data(IntPtr frame, int plane);
-
-    [LibraryImport(AvUtil)]
-    internal static partial int av_frame_get_linesize(IntPtr frame, int plane);
 
     [LibraryImport(AvUtil)]
     internal static partial IntPtr av_packet_alloc();

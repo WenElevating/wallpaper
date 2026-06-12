@@ -61,7 +61,6 @@ public sealed class PlaybackSession : IDisposable
 
     private async Task RenderLoopAsync(CancellationToken ct)
     {
-        await _backend.PlayAsync(ct);
         var frameBudget = TimeSpan.FromMilliseconds(16);
         while (!ct.IsCancellationRequested && _backend.IsPlaying)
         {
@@ -70,7 +69,10 @@ public sealed class PlaybackSession : IDisposable
                 var frame = await _backend.NextFrameAsync(ct);
                 if (frame == null)
                 {
-                    break;
+                    // End of stream — seek back to start and loop
+                    await _backend.SeekAsync(TimeSpan.Zero, ct);
+                    await _backend.PlayAsync(ct);
+                    continue;
                 }
                 frame.Dispose();
             }

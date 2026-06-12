@@ -55,7 +55,7 @@ public sealed class DesktopHost : IDisposable
 
     public WallpaperWindow? CreateForMonitor(int x, int y, int width, int height)
     {
-        if (!_isAttached) return null;
+        if (!_isAttached && !Attach()) return null;
 
         var window = new WallpaperWindow(_logger);
         if (window.TryAttachToDesktop())

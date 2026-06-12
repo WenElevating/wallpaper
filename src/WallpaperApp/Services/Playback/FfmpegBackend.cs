@@ -107,7 +107,13 @@ public sealed class FfmpegBackend : IPlaybackBackend
     private void StopDecoding()
     {
         _decodeCts?.Cancel();
-        if (_ffmpegProcess != null) { try { _ffmpegProcess.Kill(); } catch { } _ffmpegProcess.Dispose(); _ffmpegProcess = null; }
+        if (_ffmpegProcess != null)
+        {
+            try { _ffmpegProcess.Kill(); }
+            catch (Exception ex) { _logger.Warn($"Kill ffmpeg: {ex.Message}"); }
+            _ffmpegProcess.Dispose();
+            _ffmpegProcess = null;
+        }
     }
 
     private async Task<(int width, int height, double fps, TimeSpan duration)?> ProbeVideoInfoAsync(string filePath, CancellationToken ct)

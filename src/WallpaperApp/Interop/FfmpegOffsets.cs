@@ -21,4 +21,16 @@ internal static class FfmpegOffsets
     internal const int CodecIdOffset     = 0x08;  // int (AVCodecID)
     internal const int WidthOffset       = 0x2C;  // int
     internal const int HeightOffset      = 0x30;  // int
+
+    // AVFrame (avutil-59)
+    internal const int FrameData0          = 0x00;  // uint8_t* data[0]
+    internal const int FrameData1          = 0x08;  // uint8_t* data[1]
+    internal const int FrameData2          = 0x10;  // uint8_t* data[2]
+    internal const int FrameLinesize0      = 0x28;  // int linesize[0]
+    internal const int FrameLinesize1      = 0x2C;  // int linesize[1]
+    internal const int FrameLinesize2      = 0x30;  // int linesize[2]
+    internal const int FramePts            = 0x38;  // int64_t pts
+    internal const int FrameBestEffortPts  = 0xA8;  // int64_t best_effort_timestamp
+    internal const int FrameWidth          = 0x68;  // int width
+    internal const int FrameHeight         = 0x6C;  // int height
 }
