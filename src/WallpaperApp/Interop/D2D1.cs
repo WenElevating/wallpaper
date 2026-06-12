@@ -16,7 +16,7 @@ internal static partial class D2D1
     internal const int S_OK = 0;
     internal const int D2DERR_RECREATE_TARGET = unchecked((int)0x8899000C);
 
-    private static readonly Guid IID_ID2D1Factory = new("06152247-04f6-4698-8b2d-6d1b2d0b7b1a");
+    private static readonly Guid IID_ID2D1Factory = new("06152247-6f50-465a-9245-118bfd3b6007");
 
     [DllImport(DllName)]
     internal static extern int D2D1CreateFactory(
@@ -48,22 +48,23 @@ internal static partial class D2D1
         out IntPtr renderTarget);
 
     // ── ID2D1RenderTarget ──
-    // vtable: [0]QueryInterface [1]AddRef [2]Release [3]GetFactory
-    //         [4]CreateBitmap [5]BeginDraw [6]EndDraw [7]Clear
-    //         [8]SetTransform [9-12] ... [13]DrawBitmap [14-18] ...
-    //         [19]CreateBitmap (the actual method we need)
+    // vtable (inherits ID2D1Resource → IUnknown):
+    //   [0]QueryInterface [1]AddRef [2]Release (IUnknown)
+    //   [3]GetFactory (ID2D1Resource)
+    //   [4]CreateBitmap [5]CreateBitmapFromWicBitmap ... [26]DrawBitmap
+    //   ... [48]BeginDraw [49]EndDraw ...
 
     internal static int BeginDraw(IntPtr renderTarget)
     {
         var vtable = Marshal.ReadIntPtr(renderTarget);
-        var fn = GetFn<BeginDrawFn>(vtable, 5);
+        var fn = GetFn<BeginDrawFn>(vtable, 48);
         return fn(renderTarget);
     }
 
     internal static int EndDraw(IntPtr renderTarget)
     {
         var vtable = Marshal.ReadIntPtr(renderTarget);
-        var fn = GetFn<EndDrawFn>(vtable, 6);
+        var fn = GetFn<EndDrawFn>(vtable, 49);
         return fn(renderTarget);
     }
 
@@ -74,7 +75,7 @@ internal static partial class D2D1
         ref D2D1_RECT_F sourceRect)
     {
         var vtable = Marshal.ReadIntPtr(renderTarget);
-        var fn = GetFn<DrawBitmapFn>(vtable, 13);
+        var fn = GetFn<DrawBitmapFn>(vtable, 26);
         return fn(renderTarget, bitmap, ref destinationRect, opacity, interpolationMode, ref sourceRect);
     }
 
@@ -87,7 +88,7 @@ internal static partial class D2D1
         out IntPtr bitmap)
     {
         var vtable = Marshal.ReadIntPtr(renderTarget);
-        var fn = GetFn<CreateBitmapFn>(vtable, 19);
+        var fn = GetFn<CreateBitmapFn>(vtable, 4);
         return fn(renderTarget, size, srcData, pitch, ref bitmapProps, out bitmap);
     }
 
@@ -108,15 +109,16 @@ internal static partial class D2D1
         ref D2D1_BITMAP_PROPERTIES props, out IntPtr bitmap);
 
     // ── ID2D1Bitmap ──
-    // vtable: [0]QueryInterface [1]AddRef [2]Release [3]GetSize
-    //         [4]GetPixelSize [5]GetPixelFormat [6]GetDpi
-    //         [7]CopyFromMemory [8]CopyFromBitmap [9]CopyFromRenderTarget
+    // vtable (inherits ID2D1Resource → IUnknown):
+    //   [0-3] IUnknown + ID2D1Resource
+    //   [4]GetSize [5]GetPixelSize [6]GetPixelFormat [7]GetDpi
+    //   [8]CopyFromBitmap [9]CopyFromRenderTarget [10]CopyFromMemory
 
     internal static int CopyFromMemory(
         IntPtr bitmap, IntPtr dstRect, IntPtr srcData, int pitch)
     {
         var vtable = Marshal.ReadIntPtr(bitmap);
-        var fn = GetFn<CopyFromMemoryFn>(vtable, 7);
+        var fn = GetFn<CopyFromMemoryFn>(vtable, 10);
         return fn(bitmap, dstRect, srcData, pitch);
     }
 
