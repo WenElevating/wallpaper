@@ -36,21 +36,15 @@ public sealed class DesktopHost : IDisposable
     {
         if (_isAttached) return true;
 
-        var window = new WallpaperWindow(_logger);
-        if (window.TryAttachToDesktop())
-        {
-            _wallpaperWindows.Add(window);
-            _isAttached = true;
-            _retryTimer.Start();
-            _logger.Info("DesktopHost attached");
-            Attached?.Invoke(this, EventArgs.Empty);
-            return true;
-        }
-
-        window.Dispose();
-        _isAttached = false;
-        _logger.Error("Failed to attach to desktop");
-        return false;
+        // Attach() marks the host ready and starts the retry timer only. It must
+        // NOT create a wallpaper window: App startup (and playback) create windows
+        // per-monitor via CreateForMonitor(). Creating one here left an orphan
+        // window (no renderer, static background) embedded in the desktop WorkerW.
+        _isAttached = true;
+        _retryTimer.Start();
+        _logger.Info("DesktopHost attached");
+        Attached?.Invoke(this, EventArgs.Empty);
+        return true;
     }
 
     public WallpaperWindow? CreateForMonitor(int x, int y, int width, int height)
@@ -58,7 +52,7 @@ public sealed class DesktopHost : IDisposable
         if (!_isAttached && !Attach()) return null;
 
         var window = new WallpaperWindow(_logger);
-        if (window.TryAttachToDesktop())
+        if (window.Handle != IntPtr.Zero)
         {
             window.Resize(x, y, width, height);
             _wallpaperWindows.Add(window);

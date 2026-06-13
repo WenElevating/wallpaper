@@ -48,9 +48,17 @@ public partial class MainWindow : Window
     {
         if (sender is Button button && button.Tag is MonitorInfo monitor && _viewModel.SelectedWallpaper != null)
         {
-            await _viewModel.AssignWallpaperAsync(monitor, _viewModel.SelectedWallpaper);
-            MessageBox.Show($"Wallpaper set on {monitor.DeviceName}", "Success",
-                MessageBoxButton.OK, MessageBoxImage.Information);
+            var assigned = await _viewModel.AssignWallpaperAsync(monitor, _viewModel.SelectedWallpaper);
+            if (assigned)
+            {
+                MessageBox.Show($"Wallpaper set on {monitor.DeviceName}", "Success",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            else
+            {
+                MessageBox.Show($"Failed to set wallpaper on {monitor.DeviceName}", "Playback Error",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
         else
         {

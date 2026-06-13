@@ -25,17 +25,18 @@ public class MonitorIdentityTests
     }
 
     [Fact]
-    public void GenerateKey_Returns64CharHex()
+    public void GenerateKey_ReturnsGuid()
     {
         var key = MonitorIdentity.GenerateKey("test", "USB");
-        Assert.Equal(64, key.Length);
-        Assert.Matches("^[0-9A-F]+$", key);
+        Assert.Equal(36, key.Length);
+        Assert.Matches("^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$", key);
     }
 
     [Fact]
-    public void GenerateKey_EmptyInputs_ReturnsValidHash()
+    public void GenerateKey_EmptyInputs_ReturnsValidGuid()
     {
         var key = MonitorIdentity.GenerateKey("", "");
-        Assert.Equal(64, key.Length);
+        Assert.Equal(36, key.Length);
+        Assert.Matches("^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$", key);
     }
 }

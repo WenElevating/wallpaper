@@ -15,7 +15,7 @@ public sealed class MonitorIdentity
         var input = $"{edidHash}|{connectionType}";
         var bytes = Encoding.UTF8.GetBytes(input);
         var hash = SHA256.HashData(bytes);
-        return Convert.ToHexString(hash);
+            return new Guid(hash[..16]).ToString("D").ToUpperInvariant();
     }
 }
 

@@ -8,3 +8,7 @@ obj/
 *.nupkg
 *.snupkg
 TestResults/
+.omc/
+.omx/
+stdout.txt
+stderr.txt

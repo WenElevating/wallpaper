@@ -85,11 +85,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    public async Task AssignWallpaperAsync(MonitorInfo monitor, WallpaperItem wallpaper, CancellationToken ct = default)
+    public async Task<bool> AssignWallpaperAsync(MonitorInfo monitor, WallpaperItem wallpaper, CancellationToken ct = default)
     {
-        await _playback.SetWallpaperAsync(Guid.Parse(monitor.MonitorKey), wallpaper.Id, wallpaper.ManagedFilePath, ct);
+        var assigned = await _playback.SetWallpaperAsync(
+            Guid.Parse(monitor.MonitorKey),
+            wallpaper.Id,
+            wallpaper.ManagedFilePath,
+            monitor.X,
+            monitor.Y,
+            monitor.Width,
+            monitor.Height,
+            ct);
+        if (!assigned)
+            return false;
+
         wallpaper.LastUsedAtUtc = DateTime.UtcNow;
         _logger.Info($"Assigned '{wallpaper.DisplayName}' to {monitor.DeviceName}");
+        return true;
     }
 
     public async Task PauseAllAsync(CancellationToken ct = default)

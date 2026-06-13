@@ -7,11 +7,12 @@ internal static partial class D2D1
     private const string DllName = "d2d1.dll";
 
     internal const int D2D1_FACTORY_TYPE_SINGLE_THREADED = 0;
-    internal const int D2D1_RENDER_TARGET_TYPE_DEFAULT  = 2;
+    internal const int D2D1_RENDER_TARGET_TYPE_DEFAULT  = 0;
     internal const int D2D1_PRESENT_OPTIONS_NONE        = 0;
     internal const int D2D1_FEATURE_LEVEL_DEFAULT       = 0;
-    internal const int D2D1_ALPHA_MODE_IGNORE           = 2;
+    internal const int D2D1_ALPHA_MODE_IGNORE           = 3;
     internal const int D2D1_BITMAP_OPTIONS_NONE         = 0;
+    internal const int DXGI_FORMAT_B8G8R8A8_UNORM       = 87;
 
     internal const int S_OK = 0;
     internal const int D2DERR_RECREATE_TARGET = unchecked((int)0x8899000C);
@@ -22,6 +23,7 @@ internal static partial class D2D1
     internal static extern int D2D1CreateFactory(
         int factoryType,
         [MarshalAs(UnmanagedType.LPStruct)] Guid riid,
+        IntPtr factoryOptions,
         out IntPtr ppFactory);
 
     // ── ID2D1Factory ──
@@ -54,21 +56,21 @@ internal static partial class D2D1
     //   [4]CreateBitmap [5]CreateBitmapFromWicBitmap ... [26]DrawBitmap
     //   ... [48]BeginDraw [49]EndDraw ...
 
-    internal static int BeginDraw(IntPtr renderTarget)
+    internal static void BeginDraw(IntPtr renderTarget)
     {
         var vtable = Marshal.ReadIntPtr(renderTarget);
         var fn = GetFn<BeginDrawFn>(vtable, 48);
-        return fn(renderTarget);
+        fn(renderTarget);
     }
 
     internal static int EndDraw(IntPtr renderTarget)
     {
         var vtable = Marshal.ReadIntPtr(renderTarget);
         var fn = GetFn<EndDrawFn>(vtable, 49);
-        return fn(renderTarget);
+        return fn(renderTarget, IntPtr.Zero, IntPtr.Zero);
     }
 
-    internal static int DrawBitmap(
+    internal static void DrawBitmap(
         IntPtr renderTarget, IntPtr bitmap,
         ref D2D1_RECT_F destinationRect,
         float opacity, int interpolationMode,
@@ -76,7 +78,7 @@ internal static partial class D2D1
     {
         var vtable = Marshal.ReadIntPtr(renderTarget);
         var fn = GetFn<DrawBitmapFn>(vtable, 26);
-        return fn(renderTarget, bitmap, ref destinationRect, opacity, interpolationMode, ref sourceRect);
+        fn(renderTarget, bitmap, ref destinationRect, opacity, interpolationMode, ref sourceRect);
     }
 
     internal static int CreateBitmap(
@@ -93,13 +95,13 @@ internal static partial class D2D1
     }
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate int BeginDrawFn(IntPtr renderTarget);
+    private delegate void BeginDrawFn(IntPtr renderTarget);
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate int EndDrawFn(IntPtr renderTarget);
+    private delegate int EndDrawFn(IntPtr renderTarget, IntPtr tag1, IntPtr tag2);
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
-    private delegate int DrawBitmapFn(IntPtr renderTarget, IntPtr bitmap,
+    private delegate void DrawBitmapFn(IntPtr renderTarget, IntPtr bitmap,
         ref D2D1_RECT_F dstRect, float opacity, int interpolation,
         ref D2D1_RECT_F srcRect);
 
@@ -181,7 +183,7 @@ internal static partial class D2D1
             Type = D2D1_RENDER_TARGET_TYPE_DEFAULT,
             PixelFormat = new D2D1_PIXEL_FORMAT
             {
-                Format = 0,
+                Format = DXGI_FORMAT_B8G8R8A8_UNORM,
                 AlphaMode = D2D1_ALPHA_MODE_IGNORE
             },
             DpiX = 96, DpiY = 96,
@@ -216,7 +218,7 @@ internal static partial class D2D1
         {
             PixelFormat = new D2D1_PIXEL_FORMAT
             {
-                Format = 0,
+                Format = DXGI_FORMAT_B8G8R8A8_UNORM,
                 AlphaMode = D2D1_ALPHA_MODE_IGNORE
             },
             DpiX = 96, DpiY = 96

@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using WallpaperApp.Data;
@@ -17,43 +18,98 @@ public partial class App : Application
     private ServiceProvider? _serviceProvider;
     private TrayIcon? _trayIcon;
 
-    protected override async void OnStartup(StartupEventArgs e)
+    protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        var services = new ServiceCollection();
-        ConfigureServices(services);
-        _serviceProvider = services.BuildServiceProvider();
-
-        var logger = _serviceProvider.GetRequiredService<FileLogger>();
-
-        logger.Info("WallpaperApp starting...");
-
-        // Run migration with a standalone context to avoid threading issues
-        using (var migrateDb = new AppDbContext())
+        DispatcherUnhandledException += (_, args) =>
         {
-            await migrateDb.MigrateAsync();
-        }
-        logger.Info("Database migrated");
+            try
+            {
+                var msg = $"UI exception: {args.Exception.Message}\n{args.Exception.StackTrace}";
+                File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "crash.log"), msg);
+            }
+            catch { }
+            args.Handled = true;
+        };
 
-        var settings = _serviceProvider.GetRequiredService<SettingsService>();
-        var appSettings = await settings.LoadAsync();
-        var viewModel = _serviceProvider.GetRequiredService<MainViewModel>();
-        await viewModel.LoadAsync();
-
-        _trayIcon = new TrayIcon(viewModel);
-
-        if (!appSettings.StartMinimizedToTray)
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
         {
-            _trayIcon.ShowMainWindow();
-        }
+            try
+            {
+                var ex = args.ExceptionObject as Exception;
+                var msg = $"Crash: {ex?.Message}\n{ex?.StackTrace}";
+                File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "logs", "crash.log"), msg);
+            }
+            catch { }
+        };
 
-        logger.Info("Application started");
+        _ = StartupAsync(e);
+    }
+
+    private async Task StartupAsync(StartupEventArgs e)
+    {
+        try
+        {
+            var services = new ServiceCollection();
+            ConfigureServices(services);
+            _serviceProvider = services.BuildServiceProvider();
+
+            var logger = _serviceProvider.GetRequiredService<FileLogger>();
+
+            logger.Info("WallpaperApp starting...");
+
+            // Run migration with a standalone context to avoid threading issues
+            using (var migrateDb = new AppDbContext())
+            {
+                await migrateDb.MigrateAsync();
+            }
+            logger.Info("Database migrated");
+
+            var settings = _serviceProvider.GetRequiredService<SettingsService>();
+            var appSettings = await settings.LoadAsync();
+            var viewModel = _serviceProvider.GetRequiredService<MainViewModel>();
+            await viewModel.LoadAsync();
+
+            // Load monitors first (DesktopHost needs monitor info)
+            var monitorManager = _serviceProvider.GetRequiredService<MonitorManager>();
+            monitorManager.Refresh();
+
+            // DesktopHost is readied but no wallpaper window is created here.
+            // PlaybackManager creates a window per monitor on demand when a
+            // wallpaper is actually assigned; creating one at startup leaves an
+            // orphan window (no renderer) embedded in the desktop WorkerW.
+            var desktopHost = _serviceProvider.GetRequiredService<DesktopHost>();
+            desktopHost.Attach();
+            logger.Info($"DesktopHost attached: {desktopHost.IsAttached}");
+
+            _trayIcon = new TrayIcon(viewModel);
+
+            if (!appSettings.StartMinimizedToTray)
+            {
+                _trayIcon.ShowMainWindow();
+            }
+
+            logger.Info("Application started");
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                var logger2 = _serviceProvider?.GetService<FileLogger>();
+                logger2?.Error("Startup failed", ex);
+            }
+            catch { }
+            MessageBox.Show($"Startup failed:\n{ex.Message}\n\n{ex.StackTrace}", "Error",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+            Environment.Exit(1);
+        }
     }
 
     private static void ConfigureServices(IServiceCollection services)
     {
-        services.AddSingleton<FileLogger>();
+        var logDir = Path.Combine(AppContext.BaseDirectory, "logs");
+        services.AddSingleton(new FileLogger(logDir));
         services.AddTransient<AppDbContext>();
         services.AddSingleton<SettingsService>();
         services.AddSingleton<LibraryService>();

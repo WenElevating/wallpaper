@@ -3,7 +3,7 @@ namespace WallpaperApp.Models;
 public class AppSettings
 {
     public bool LaunchAtStartup { get; set; }
-    public bool StartMinimizedToTray { get; set; } = true;
+    public bool StartMinimizedToTray { get; set; } = false;
     public bool GlobalPauseOnFullscreen { get; set; } = true;
     public FitMode DefaultFitMode { get; set; } = FitMode.Fill;
     public bool HardwareAccelerationEnabled { get; set; } = true;

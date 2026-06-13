@@ -11,6 +11,12 @@ internal static partial class NativeMethods
         [MarshalAs(UnmanagedType.LPWStr)] string? lpszClass,
         [MarshalAs(UnmanagedType.LPWStr)] string? lpszWindow);
 
+    [LibraryImport("user32.dll", EntryPoint = "FindWindowExW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial IntPtr FindWindowExHandle(
+        IntPtr hWndParent, IntPtr hWndChildAfter,
+        string? lpszClass,
+        string? lpszWindow);
+
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
@@ -41,6 +47,12 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static extern bool GetMonitorInfoExW(IntPtr hMonitor, ref MONITORINFOEXW lpmi);
 
+    internal const int GW_HWNDNEXT = 2;
+    internal const int GW_HWNDPREV = 3;
+
+    [LibraryImport("user32.dll")]
+    internal static partial IntPtr GetWindow(IntPtr hWnd, int uCmd);
+
     [LibraryImport("user32.dll")]
     internal static partial IntPtr GetForegroundWindow();
 
@@ -50,7 +62,7 @@ internal static partial class NativeMethods
     [LibraryImport("user32.dll")]
     internal static partial int SetWindowLongW(IntPtr hWnd, int nIndex, int dwNewLong);
 
-    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)]
     internal static partial IntPtr GetModuleHandleW(string? lpModuleName);
 
     [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
@@ -59,6 +71,76 @@ internal static partial class NativeMethods
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool EnumWindows(EnumWindowsDelegate lpEnumFunc, IntPtr lParam);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool IsWindowVisible(IntPtr hWnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, [MarshalAs(UnmanagedType.Bool)] bool bErase);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool ValidateRect(IntPtr hWnd, IntPtr lpRect);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+
+    [LibraryImport("user32.dll")]
+    internal static partial IntPtr GetDC(IntPtr hWnd);
+
+    [LibraryImport("user32.dll")]
+    internal static partial int ReleaseDC(IntPtr hWnd, IntPtr hDC);
+
+    [LibraryImport("gdi32.dll")]
+    internal static partial IntPtr CreateSolidBrush(uint crColor);
+
+    [LibraryImport("user32.dll")]
+    internal static partial int FillRect(IntPtr hDC, ref RECT lprc, IntPtr hbr);
+
+    [LibraryImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool DeleteObject(IntPtr hObject);
+
+    internal const int WM_PAINT = 0x000F;
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool IsWindow(IntPtr hWnd);
+
+    [LibraryImport("user32.dll")]
+    internal static partial IntPtr GetParent(IntPtr hWnd);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool PeekMessageW(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MSG
+    {
+        public IntPtr hWnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public int pt_x;
+        public int pt_y;
+    }
+
+    internal const uint PM_REMOVE = 0x0001;
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool TranslateMessage(ref MSG lpMsg);
+
+    [LibraryImport("user32.dll")]
+    internal static partial IntPtr DispatchMessageW(ref MSG lpMsg);
 
     [LibraryImport("user32.dll")]
     internal static partial int GetSystemMetrics(int nIndex);
@@ -86,12 +168,17 @@ internal static partial class NativeMethods
     internal const int GWL_STYLE = -16;
     internal const int GWL_EXSTYLE = -20;
     internal const int WS_CHILD = 0x40000000;
+    internal const int WS_VISIBLE = 0x10000000;
     internal const int WS_EX_TOOLWINDOW = 0x00000080;
     internal const int WS_EX_NOACTIVATE = 0x08000000;
+    internal const uint SWP_NOSIZE = 0x0001;
+    internal const uint SWP_NOMOVE = 0x0002;
+    internal const uint SWP_NOZORDER = 0x0004;
     internal const uint SWP_NOACTIVATE = 0x0010;
     internal const uint SWP_SHOWWINDOW = 0x0040;
     internal const int SW_HIDE = 0;
     internal const int SW_SHOW = 5;
+    internal const int WS_EX_TRANSPARENT = 0x00000020;
     internal static readonly IntPtr HWND_BOTTOM = new(1);
     internal static readonly IntPtr HWND_TOPMOST = new(-1);
     internal const int DWMWA_EXTENDED_FRAME_BOUNDS = 9;
