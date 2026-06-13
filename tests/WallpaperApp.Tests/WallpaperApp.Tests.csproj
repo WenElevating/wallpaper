@@ -24,6 +24,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\WallpaperApp\WallpaperApp.csproj" />
+    <ProjectReference Include="..\WallpaperApp.FfmpegProbe\WallpaperApp.FfmpegProbe.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\WallpaperApp.RenderProbe\WallpaperApp.RenderProbe.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
 </Project>

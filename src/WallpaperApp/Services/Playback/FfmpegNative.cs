@@ -16,10 +16,10 @@ internal static partial class FfmpegNative
     internal static partial void avformat_free_context(IntPtr ps);
 
     [LibraryImport(AvFormat, StringMarshalling = StringMarshalling.Utf8)]
-    internal static partial int avformat_open_input(out IntPtr ps, string url, IntPtr fmt, IntPtr options);
+    internal static partial int avformat_open_input(ref IntPtr ps, string url, IntPtr fmt, IntPtr options);
 
     [LibraryImport(AvFormat)]
-    internal static partial void avformat_close_input(out IntPtr ps);
+    internal static partial void avformat_close_input(ref IntPtr ps);
 
     [LibraryImport(AvFormat)]
     internal static partial int avformat_find_stream_info(IntPtr ps, IntPtr options);
@@ -73,12 +73,15 @@ internal static partial class FfmpegNative
     internal static partial void av_frame_free(ref IntPtr frame);
 
     [LibraryImport(AvUtil)]
+    internal static partial void av_frame_unref(IntPtr frame);
+
+    [LibraryImport(AvCodec)]
     internal static partial IntPtr av_packet_alloc();
 
-    [LibraryImport(AvUtil)]
+    [LibraryImport(AvCodec)]
     internal static partial void av_packet_free(ref IntPtr pkt);
 
-    [LibraryImport(AvUtil)]
+    [LibraryImport(AvCodec)]
     internal static partial void av_packet_unref(IntPtr pkt);
 
     [LibraryImport(AvUtil)]
@@ -94,19 +97,64 @@ internal static partial class FfmpegNative
         int flags, IntPtr srcFilter, IntPtr dstFilter, IntPtr param);
 
     [LibraryImport(SwScale)]
+    internal static partial IntPtr sws_getCachedContext(
+        IntPtr context,
+        int srcW, int srcH, int srcFormat,
+        int dstW, int dstH, int dstFormat,
+        int flags, IntPtr srcFilter, IntPtr dstFilter, IntPtr param);
+
+    [LibraryImport(SwScale)]
+    internal static partial IntPtr sws_getCoefficients(int colorspace);
+
+    [LibraryImport(SwScale)]
+    internal static partial int sws_setColorspaceDetails(
+        IntPtr context,
+        IntPtr invTable,
+        int srcRange,
+        IntPtr table,
+        int dstRange,
+        int brightness,
+        int contrast,
+        int saturation);
+
+    [LibraryImport(SwScale)]
     internal static partial void sws_freeContext(IntPtr swsContext);
 
     [LibraryImport(SwScale)]
-    internal static partial int sws_scale(
-        IntPtr context, IntPtr[] srcSlice, int[] srcStride,
-        int srcSliceY, int srcSliceH,
-        IntPtr[] dstSlice, int[] dstStride);
+    internal static unsafe partial int sws_scale(
+        IntPtr context,
+        IntPtr* srcSlice,
+        int* srcStride,
+        int srcSliceY,
+        int srcSliceH,
+        IntPtr* dstSlice,
+        int* dstStride);
 
     internal const int AVMEDIA_TYPE_VIDEO = 0;
     internal const int AV_CODEC_ID_NONE = 0;
-    internal const int AV_PIX_FMT_BGRA = 26;
+    internal const int AV_PIX_FMT_BGRA = 28;
     internal const int AV_PIX_FMT_YUV420P = 0;
     internal const int SWS_BILINEAR = 2;
+
+    internal const int AVCOL_RANGE_UNSPECIFIED = 0;
+    internal const int AVCOL_RANGE_MPEG = 1;
+    internal const int AVCOL_RANGE_JPEG = 2;
+
+    internal const int AVCOL_SPC_RGB = 0;
+    internal const int AVCOL_SPC_BT709 = 1;
+    internal const int AVCOL_SPC_UNSPECIFIED = 2;
+    internal const int AVCOL_SPC_FCC = 4;
+    internal const int AVCOL_SPC_BT470BG = 5;
+    internal const int AVCOL_SPC_SMPTE170M = 6;
+    internal const int AVCOL_SPC_SMPTE240M = 7;
+    internal const int AVCOL_SPC_BT2020_NCL = 9;
+    internal const int AVCOL_SPC_BT2020_CL = 10;
+
+    internal const int SWS_CS_ITU709 = 1;
+    internal const int SWS_CS_FCC = 4;
+    internal const int SWS_CS_ITU601 = 5;
+    internal const int SWS_CS_SMPTE240M = 7;
+    internal const int SWS_CS_BT2020 = 9;
 
     internal const int AVSEEK_FLAG_BACKWARD = 1;
     internal const int AVSEEK_FLAG_FRAME = 2;
