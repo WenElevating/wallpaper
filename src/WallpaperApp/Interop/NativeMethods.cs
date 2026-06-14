@@ -164,6 +164,15 @@ internal static partial class NativeMethods
     [LibraryImport("dwmapi.dll")]
     internal static partial int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out RECT pvAttribute, int cbAttribute);
 
+    [LibraryImport("dwmapi.dll")]
+    internal static partial int DwmSetWindowAttribute(IntPtr hwnd, int dwAttribute, ref int pvAttribute, int cbAttribute);
+
+    // Window backdrop (Win11 22000+) and dark title bar.
+    internal const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
+    internal const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
+    internal const int DWMSBT_MAINWINDOW = 2; // Mica
+    internal const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+
     internal const uint WM_SPAWN_WORKERW = 0x052C;
     internal const int GWL_STYLE = -16;
     internal const int GWL_EXSTYLE = -20;

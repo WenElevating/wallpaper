@@ -38,6 +38,17 @@ public sealed class PlaybackManager : IDisposable
             return _sessions.TryGetValue(monitorId, out var s) && s.IsPlaying;
     }
 
+    // True when at least one wallpaper session is active (drives the pause
+    // button's enabled state in the UI).
+    public bool HasActiveSessions
+    {
+        get { lock (_lock) return _sessions.Count > 0; }
+    }
+
+    public event EventHandler? SessionsChanged;
+
+    private void RaiseSessionsChanged() => SessionsChanged?.Invoke(this, EventArgs.Empty);
+
     public async Task<bool> SetWallpaperAsync(
         Guid monitorId,
         Guid wallpaperId,
@@ -76,6 +87,7 @@ public sealed class PlaybackManager : IDisposable
 
         lock (_lock)
             _sessions[monitorId] = session;
+        RaiseSessionsChanged();
 
         _logger.Info($"Wallpaper set on monitor {monitorId}: {Path.GetFileName(filePath)}");
         return true;
@@ -96,6 +108,7 @@ public sealed class PlaybackManager : IDisposable
         {
             await session.StopAsync(ct);
             session.Dispose();
+            RaiseSessionsChanged();
         }
     }
 
@@ -130,6 +143,7 @@ public sealed class PlaybackManager : IDisposable
             await s.StopAsync(ct);
             s.Dispose();
         }
+        RaiseSessionsChanged();
     }
 
     private IPlaybackBackend CreateBackend() => new FfmpegBackend(_logger);

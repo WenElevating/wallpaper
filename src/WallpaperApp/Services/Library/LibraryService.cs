@@ -97,6 +97,17 @@ public sealed class LibraryService
         return await db.WallpaperItems.FindAsync(new object[] { id }, ct);
     }
 
+    public async Task UpdateMetadataAsync(Guid id, int width, int height, long durationMs, CancellationToken ct = default)
+    {
+        await using var db = CreateDbContext();
+        var item = await db.WallpaperItems.FindAsync(new object[] { id }, ct);
+        if (item == null) return;
+        item.Width = width;
+        item.Height = height;
+        item.DurationMs = durationMs;
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         await using var db = CreateDbContext();

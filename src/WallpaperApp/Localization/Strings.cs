@@ -47,4 +47,22 @@ internal static class Strings
     public static string MsgNoSelectionCaption => Get(nameof(MsgNoSelectionCaption));
     public static string MsgStartupFailedPrefix => Get(nameof(MsgStartupFailedPrefix));
     public static string ErrorCaption => Get(nameof(ErrorCaption));
+    public static string Back => Get(nameof(Back));
+    public static string SetAsWallpaper => Get(nameof(SetAsWallpaper));
+    public static string ChooseMonitor => Get(nameof(ChooseMonitor));
+    public static string SetOnAllMonitors => Get(nameof(SetOnAllMonitors));
+    public static string ResolutionLabel => Get(nameof(ResolutionLabel));
+    public static string DurationLabel => Get(nameof(DurationLabel));
+    public static string FormatLabel => Get(nameof(FormatLabel));
+    public static string SizeLabel => Get(nameof(SizeLabel));
+    public static string NoWallpapers => Get(nameof(NoWallpapers));
+    public static string SearchPlaceholder => Get(nameof(SearchPlaceholder));
+    public static string SortRecent => Get(nameof(SortRecent));
+    public static string SortName => Get(nameof(SortName));
+    public static string SortSize => Get(nameof(SortSize));
+    public static string ImportLabel => Get(nameof(ImportLabel));
+    public static string SettingsLabel => Get(nameof(SettingsLabel));
+    public static string MsgSetSuccessDesktop => Get(nameof(MsgSetSuccessDesktop));
+    public static string MsgSetSuccessAll => Get(nameof(MsgSetSuccessAll));
+    public static string MsgSetFailedShort => Get(nameof(MsgSetFailedShort));
 }

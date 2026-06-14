@@ -118,4 +118,58 @@
   <data name="ErrorCaption" xml:space="preserve">
     <value>错误</value>
   </data>
+  <data name="Back" xml:space="preserve">
+    <value>返回</value>
+  </data>
+  <data name="SetAsWallpaper" xml:space="preserve">
+    <value>设为壁纸</value>
+  </data>
+  <data name="ChooseMonitor" xml:space="preserve">
+    <value>选择显示器</value>
+  </data>
+  <data name="SetOnAllMonitors" xml:space="preserve">
+    <value>设置到所有显示器</value>
+  </data>
+  <data name="ResolutionLabel" xml:space="preserve">
+    <value>分辨率</value>
+  </data>
+  <data name="DurationLabel" xml:space="preserve">
+    <value>时长</value>
+  </data>
+  <data name="FormatLabel" xml:space="preserve">
+    <value>格式</value>
+  </data>
+  <data name="SizeLabel" xml:space="preserve">
+    <value>大小</value>
+  </data>
+  <data name="NoWallpapers" xml:space="preserve">
+    <value>还没有壁纸，先导入一些吧。</value>
+  </data>
+  <data name="SearchPlaceholder" xml:space="preserve">
+    <value>搜索壁纸…</value>
+  </data>
+  <data name="SortRecent" xml:space="preserve">
+    <value>最近</value>
+  </data>
+  <data name="SortName" xml:space="preserve">
+    <value>名称</value>
+  </data>
+  <data name="SortSize" xml:space="preserve">
+    <value>大小</value>
+  </data>
+  <data name="ImportLabel" xml:space="preserve">
+    <value>导入</value>
+  </data>
+  <data name="SettingsLabel" xml:space="preserve">
+    <value>设置</value>
+  </data>
+  <data name="MsgSetSuccessDesktop" xml:space="preserve">
+    <value>壁纸已设置到桌面</value>
+  </data>
+  <data name="MsgSetSuccessAll" xml:space="preserve">
+    <value>壁纸已设置到所有显示器</value>
+  </data>
+  <data name="MsgSetFailedShort" xml:space="preserve">
+    <value>设置壁纸失败</value>
+  </data>
 </root>

@@ -118,4 +118,58 @@
   <data name="ErrorCaption" xml:space="preserve">
     <value>Error</value>
   </data>
+  <data name="Back" xml:space="preserve">
+    <value>Back</value>
+  </data>
+  <data name="SetAsWallpaper" xml:space="preserve">
+    <value>Set as wallpaper</value>
+  </data>
+  <data name="ChooseMonitor" xml:space="preserve">
+    <value>Choose a monitor</value>
+  </data>
+  <data name="SetOnAllMonitors" xml:space="preserve">
+    <value>Set on all monitors</value>
+  </data>
+  <data name="ResolutionLabel" xml:space="preserve">
+    <value>Resolution</value>
+  </data>
+  <data name="DurationLabel" xml:space="preserve">
+    <value>Duration</value>
+  </data>
+  <data name="FormatLabel" xml:space="preserve">
+    <value>Format</value>
+  </data>
+  <data name="SizeLabel" xml:space="preserve">
+    <value>Size</value>
+  </data>
+  <data name="NoWallpapers" xml:space="preserve">
+    <value>No wallpapers yet — import some to get started.</value>
+  </data>
+  <data name="SearchPlaceholder" xml:space="preserve">
+    <value>Search…</value>
+  </data>
+  <data name="SortRecent" xml:space="preserve">
+    <value>Recent</value>
+  </data>
+  <data name="SortName" xml:space="preserve">
+    <value>Name</value>
+  </data>
+  <data name="SortSize" xml:space="preserve">
+    <value>Size</value>
+  </data>
+  <data name="ImportLabel" xml:space="preserve">
+    <value>Import</value>
+  </data>
+  <data name="SettingsLabel" xml:space="preserve">
+    <value>Settings</value>
+  </data>
+  <data name="MsgSetSuccessDesktop" xml:space="preserve">
+    <value>Wallpaper set to desktop</value>
+  </data>
+  <data name="MsgSetSuccessAll" xml:space="preserve">
+    <value>Wallpaper set to all monitors</value>
+  </data>
+  <data name="MsgSetFailedShort" xml:space="preserve">
+    <value>Failed to set wallpaper</value>
+  </data>
 </root>

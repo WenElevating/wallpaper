@@ -57,6 +57,7 @@ public partial class App : Application
             _serviceProvider = services.BuildServiceProvider();
 
             var logger = _serviceProvider.GetRequiredService<FileLogger>();
+            PosterCache.Logger = logger;
 
             logger.Info("WallpaperApp starting...");
 

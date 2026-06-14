@@ -3,52 +3,51 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
-        <!-- Dark theme surface palette (Catppuccin Mocha) -->
+        <!-- ===== Dark-glass palette (Catppuccin Mocha) ===== -->
         <SolidColorBrush x:Key="SurfaceBrush" Color="#3B3B5C"/>
         <SolidColorBrush x:Key="SurfaceHoverBrush" Color="#45475A"/>
         <SolidColorBrush x:Key="SurfaceSelectedBrush" Color="#585B70"/>
         <SolidColorBrush x:Key="BorderBrush" Color="#45475A"/>
         <SolidColorBrush x:Key="TextBrush" Color="#CDD6F4"/>
+        <SolidColorBrush x:Key="MutedTextBrush" Color="#7F849C"/>
 
+        <SolidColorBrush x:Key="AccentBrush" Color="#89B4FA"/>
+        <SolidColorBrush x:Key="AccentBrush2" Color="#B4BEFE"/>
+        <SolidColorBrush x:Key="CardSurfaceBrush" Color="#262637"/>
+        <SolidColorBrush x:Key="CardBorderBrush" Color="#3A3A52"/>
+
+        <!-- Soft translucent overlay used at the bottom of media cards for legible titles. -->
+        <LinearGradientBrush x:Key="CardOverlayBrush" StartPoint="0,0.55" EndPoint="0,1">
+            <GradientStop Color="#00FFFFFF" Offset="0"/>
+            <GradientStop Color="#A6000000" Offset="1"/>
+        </LinearGradientBrush>
+
+        <DropShadowEffect x:Key="CardShadowEffect" Color="#000000" Opacity="0.45"
+                          BlurRadius="18" ShadowDepth="3" Direction="270"/>
+        <DropShadowEffect x:Key="AccentGlowEffect" Color="#89B4FA" Opacity="0.65"
+                          BlurRadius="22" ShadowDepth="0"/>
+
+        <!-- ===== Buttons ===== -->
         <Style TargetType="Button">
             <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="Padding" Value="14,7"/>
+            <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
-                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}"
+                                BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Dark ComboBox item: dark surface, light text, hover/selected highlights. -->
-        <Style x:Key="DarkComboBoxItemStyle" TargetType="ComboBoxItem">
-            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
-            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-            <Setter Property="Padding" Value="10,5"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ComboBoxItem">
-                        <Border x:Name="ItemBorder"
-                                Background="{TemplateBinding Background}"
-                                Padding="{TemplateBinding Padding}"
-                                CornerRadius="3">
-                            <ContentPresenter VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="ItemBorder" Property="Background"
-                                        Value="{StaticResource SurfaceHoverBrush}"/>
+                                <Setter TargetName="bd" Property="Background" Value="{StaticResource SurfaceHoverBrush}"/>
                             </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="ItemBorder" Property="Background"
-                                        Value="{StaticResource SurfaceSelectedBrush}"/>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.45"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -56,13 +55,70 @@
             </Setter>
         </Style>
 
-        <!--
-            Dark ComboBox template. The default template ignores the control's
-            Background and paints the selection box + dropdown with system colors,
-            which made light foreground text invisible on a light box. This template
-            forces a dark surface everywhere: the selection box, the drop arrow, the
-            popup, and each item.
-        -->
+        <!-- Accent gradient "primary" button with a soft glow on hover. -->
+        <Style x:Key="PrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Foreground" Value="#0B0B14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Padding" Value="20,10"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Color="#89B4FA" Offset="0"/>
+                                    <GradientStop Color="#B4BEFE" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Border.Effect>
+                                <DropShadowEffect Color="#89B4FA" Opacity="0.35" BlurRadius="14" ShadowDepth="0"/>
+                            </Border.Effect>
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Trigger.Setters>
+                                    <Setter TargetName="bd" Property="Effect">
+                                        <Setter.Value>
+                                            <DropShadowEffect Color="#89B4FA" Opacity="0.7" BlurRadius="24" ShadowDepth="0"/>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Trigger.Setters>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ===== Dark ComboBox (selection box + dropdown) ===== -->
+        <Style x:Key="DarkComboBoxItemStyle" TargetType="ComboBoxItem">
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="ItemBorder" Background="{TemplateBinding Background}"
+                                Padding="{TemplateBinding Padding}" CornerRadius="3">
+                            <ContentPresenter VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource SurfaceHoverBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="{StaticResource SurfaceSelectedBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <Style TargetType="ComboBox">
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
             <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
@@ -73,52 +129,31 @@
                 <Setter.Value>
                     <ControlTemplate TargetType="ComboBox">
                         <Grid>
-                            <ToggleButton x:Name="ToggleButton"
-                                          Focusable="False"
+                            <ToggleButton x:Name="ToggleButton" Focusable="False"
                                           IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
                                           ClickMode="Press">
                                 <ToggleButton.Template>
                                     <ControlTemplate TargetType="ToggleButton">
                                         <Border Background="{StaticResource SurfaceBrush}"
                                                 BorderBrush="{StaticResource BorderBrush}"
-                                                BorderThickness="1" CornerRadius="4"/>
+                                                BorderThickness="1" CornerRadius="6"/>
                                     </ControlTemplate>
                                 </ToggleButton.Template>
                             </ToggleButton>
-
-                            <ContentPresenter x:Name="ContentSite"
-                                              IsHitTestVisible="False"
+                            <ContentPresenter x:Name="ContentSite" IsHitTestVisible="False"
                                               Content="{TemplateBinding SelectionBoxItem}"
                                               ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
                                               ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
-                                              Margin="10,5,26,5"
-                                              VerticalAlignment="Center"
-                                              HorizontalAlignment="Left"
+                                              Margin="12,6,28,6" VerticalAlignment="Center" HorizontalAlignment="Left"
                                               TextBlock.Foreground="{StaticResource TextBrush}"/>
-
-                            <!-- Drop arrow -->
-                            <Path x:Name="Arrow"
-                                  Data="M0,0 L5,5 L10,0"
-                                  Fill="{StaticResource TextBrush}"
-                                  HorizontalAlignment="Right"
-                                  VerticalAlignment="Center"
-                                  Margin="0,0,9,0"/>
-
-                            <Popup x:Name="PART_Popup"
-                                   IsOpen="{TemplateBinding IsDropDownOpen}"
-                                   Placement="Bottom"
-                                   AllowsTransparency="True"
-                                   Focusable="False"
-                                   PopupAnimation="Slide">
+                            <Path x:Name="Arrow" Data="M0,0 L5,5 L10,0" Fill="{StaticResource TextBrush}"
+                                  HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,11,0"/>
+                            <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   Placement="Bottom" AllowsTransparency="True" Focusable="False" PopupAnimation="Slide">
                                 <Border Background="{StaticResource SurfaceBrush}"
-                                        BorderBrush="{StaticResource BorderBrush}"
-                                        BorderThickness="1"
-                                        CornerRadius="4"
-                                        Padding="2"
-                                        MinWidth="{TemplateBinding ActualWidth}">
-                                    <ScrollViewer>
-                                        <ItemsPresenter/>
-                                    </ScrollViewer>
+                                        BorderBrush="{StaticResource BorderBrush}" BorderThickness="1"
+                                        CornerRadius="6" Padding="2" MinWidth="{TemplateBinding ActualWidth}">
+                                    <ScrollViewer><ItemsPresenter/></ScrollViewer>
                                 </Border>
                             </Popup>
                         </Grid>
@@ -130,6 +165,34 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+        </Style>
+
+        <!-- ===== Dark scrollbars ===== -->
+        <Style TargetType="ScrollBar">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="{StaticResource SurfaceHoverBrush}"/>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Vertical">
+                    <Setter Property="Width" Value="10"/>
+                    <Setter Property="MinWidth" Value="10"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="Thumb">
+            <Setter Property="Background" Value="{StaticResource SurfaceSelectedBrush}"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Thumb">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="5" Margin="1"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="{StaticResource AccentBrush}"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Application.Resources>
 </Application>
