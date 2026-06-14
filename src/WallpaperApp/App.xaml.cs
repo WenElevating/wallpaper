@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using WallpaperApp.Data;
+using WallpaperApp.Localization;
 using WallpaperApp.Services.Desktop;
 using WallpaperApp.Services.Library;
 using WallpaperApp.Services.Logging;
@@ -68,6 +69,12 @@ public partial class App : Application
 
             var settings = _serviceProvider.GetRequiredService<SettingsService>();
             var appSettings = await settings.LoadAsync();
+
+            // Apply the UI language BEFORE any window is created so the first
+            // render and all {loc:Loc} bindings start in the right culture.
+            LocalizationService.ApplyCulture(appSettings.Language);
+            logger.Info($"UI language: {LocalizationService.EffectiveCode(appSettings.Language)}");
+
             var viewModel = _serviceProvider.GetRequiredService<MainViewModel>();
             await viewModel.LoadAsync();
 
@@ -83,7 +90,7 @@ public partial class App : Application
             desktopHost.Attach();
             logger.Info($"DesktopHost attached: {desktopHost.IsAttached}");
 
-            _trayIcon = new TrayIcon(viewModel);
+            _trayIcon = new TrayIcon(viewModel, logger);
 
             if (!appSettings.StartMinimizedToTray)
             {
@@ -100,7 +107,9 @@ public partial class App : Application
                 logger2?.Error("Startup failed", ex);
             }
             catch { }
-            MessageBox.Show($"Startup failed:\n{ex.Message}\n\n{ex.StackTrace}", "Error",
+            MessageBox.Show(
+                $"{Strings.MsgStartupFailedPrefix}\n\n{ex.Message}\n\n{ex.StackTrace}",
+                Strings.ErrorCaption,
                 MessageBoxButton.OK, MessageBoxImage.Error);
             Environment.Exit(1);
         }

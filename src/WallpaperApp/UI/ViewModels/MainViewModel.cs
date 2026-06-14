@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
+using WallpaperApp.Localization;
 using WallpaperApp.Models;
 using WallpaperApp.Services.Library;
 using WallpaperApp.Services.Logging;
@@ -112,5 +113,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public async Task ResumeAllAsync(CancellationToken ct = default)
     {
         await _playback.ResumeAllAsync(ct);
+    }
+
+    // Persist the user's language choice and apply it live (refreshes every
+    // {loc:Loc} binding via TranslationSource; C# strings follow Strings.Culture).
+    public async Task SetLanguageAsync(string code)
+    {
+        Settings = Settings with { Language = code };
+        await _settings.SaveAsync(Settings);
+        LocalizationService.ApplyCulture(code);
+        _logger.Info($"Language set to {code}");
     }
 }

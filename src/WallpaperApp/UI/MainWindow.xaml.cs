@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
+using WallpaperApp.Localization;
 using WallpaperApp.Services.Monitor;
 using WallpaperApp.UI.ViewModels;
 
@@ -10,6 +11,7 @@ namespace WallpaperApp.UI;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
+    private bool _suppressLanguageChange;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -21,15 +23,45 @@ public partial class MainWindow : Window
     private async void Window_Loaded(object sender, RoutedEventArgs e)
     {
         await _viewModel.LoadAsync();
+        SyncLanguageComboBox();
+    }
+
+    // Reflect the current language setting in the combo box without retriggering
+    // the SelectionChanged handler.
+    private void SyncLanguageComboBox()
+    {
+        var effective = LocalizationService.EffectiveCode(_viewModel.Settings.Language);
+        _suppressLanguageChange = true;
+        try
+        {
+            foreach (var item in LanguageComboBox.Items)
+            {
+                if (item is ComboBoxItem cbi && cbi.Tag is string tag && tag == effective)
+                {
+                    LanguageComboBox.SelectedItem = cbi;
+                    break;
+                }
+            }
+        }
+        finally { _suppressLanguageChange = false; }
+    }
+
+    private async void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_suppressLanguageChange) return;
+        if (LanguageComboBox.SelectedItem is ComboBoxItem item && item.Tag is string code)
+        {
+            await _viewModel.SetLanguageAsync(code);
+        }
     }
 
     private async void ImportButton_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog
         {
-            Filter = "Media files|*.mp4;*.webm;*.avi;*.mov;*.gif;*.mkv|All files|*.*",
+            Filter = $"{Strings.DlgImportFilterMedia}|*.mp4;*.webm;*.avi;*.mov;*.gif;*.mkv|{Strings.DlgImportFilterAll}|*.*",
             Multiselect = true,
-            Title = "Import Wallpaper Files"
+            Title = Strings.DlgImportTitle
         };
 
         if (dialog.ShowDialog() == true)
@@ -51,18 +83,18 @@ public partial class MainWindow : Window
             var assigned = await _viewModel.AssignWallpaperAsync(monitor, _viewModel.SelectedWallpaper);
             if (assigned)
             {
-                MessageBox.Show($"Wallpaper set on {monitor.DeviceName}", "Success",
-                    MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show(string.Format(Strings.MsgSetSuccess, monitor.DeviceName),
+                    Strings.MsgSetSuccessCaption, MessageBoxButton.OK, MessageBoxImage.Information);
             }
             else
             {
-                MessageBox.Show($"Failed to set wallpaper on {monitor.DeviceName}", "Playback Error",
-                    MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show(string.Format(Strings.MsgSetFailed, monitor.DeviceName),
+                    Strings.MsgSetFailedCaption, MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
         else
         {
-            MessageBox.Show("Please select a wallpaper first.", "No Selection",
+            MessageBox.Show(Strings.MsgNoSelection, Strings.MsgNoSelectionCaption,
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
     }

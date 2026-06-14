@@ -1,12 +1,16 @@
 namespace WallpaperApp.Models;
 
-public class AppSettings
+// Settings bag, persisted as JSON by SettingsService. A record so language (and
+// future) updates can use an immutable `with` copy instead of in-place mutation.
+public record AppSettings
 {
-    public bool LaunchAtStartup { get; set; }
-    public bool StartMinimizedToTray { get; set; } = false;
-    public bool GlobalPauseOnFullscreen { get; set; } = true;
-    public FitMode DefaultFitMode { get; set; } = FitMode.Fill;
-    public bool HardwareAccelerationEnabled { get; set; } = true;
-    public string LogVerbosity { get; set; } = "Info";
-    public string Theme { get; set; } = "Dark";
+    public bool LaunchAtStartup { get; init; }
+    public bool StartMinimizedToTray { get; init; }
+    public bool GlobalPauseOnFullscreen { get; init; } = true;
+    public FitMode DefaultFitMode { get; init; } = FitMode.Fill;
+    public bool HardwareAccelerationEnabled { get; init; } = true;
+    public string LogVerbosity { get; init; } = "Info";
+    public string Theme { get; init; } = "Dark";
+    /// <summary>UI language code ("zh-CN", "en"); empty = follow the OS UI language.</summary>
+    public string Language { get; init; } = "";
 }

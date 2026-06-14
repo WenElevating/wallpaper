@@ -233,4 +233,100 @@ internal static partial class NativeMethods
         public string? lpszClassName;
         public IntPtr hIconSm;
     }
+
+    // ---------- System tray (Shell_NotifyIcon) ----------
+
+    // A message-only window parent. Passing this as hWndParent to CreateWindowExW
+    // yields a window that has no UI but still receives window messages — ideal as
+    // the owner of a tray icon's callback window.
+    internal static readonly IntPtr HWND_MESSAGE = new(-3);
+
+    // Classic DllImport (not LibraryImport): the source generator cannot marshal a
+    // struct containing ByValTStr fixed-size strings, but the runtime marshaler can.
+    [DllImport("shell32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool Shell_NotifyIconW(uint dwMessage, ref NOTIFYICONDATAW lpData);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    internal struct NOTIFYICONDATAW
+    {
+        public uint cbSize;
+        public IntPtr hWnd;
+        public uint uID;
+        public uint uFlags;
+        public uint uCallbackMessage;
+        public IntPtr hIcon;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string szTip;
+        public uint dwState;
+        public uint dwStateMask;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string szInfo;
+        public uint uVersion; // union: uTimeout / uVersion
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string szInfoTitle;
+        public uint dwInfoFlags;
+    }
+
+    internal const uint NIM_ADD = 0x00000000;
+    internal const uint NIM_MODIFY = 0x00000001;
+    internal const uint NIM_DELETE = 0x00000002;
+    internal const uint NIF_MESSAGE = 0x00000001;
+    internal const uint NIF_ICON = 0x00000002;
+    internal const uint NIF_TIP = 0x00000004;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct POINT
+    {
+        public int X;
+        public int Y;
+    }
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetCursorPos(out POINT lpPoint);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetForegroundWindow(IntPtr hWnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool PostMessageW(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+    internal const uint WM_NULL = 0x0000;
+
+    // ---------- Popup menu ----------
+
+    [LibraryImport("user32.dll")]
+    internal static partial IntPtr CreatePopupMenu();
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool DestroyMenu(IntPtr hMenu);
+
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool AppendMenuW(IntPtr hMenu, uint uFlags, uint uIDNewItem, string? lpNewItem);
+
+    // Same entry point as AppendMenuW, but uIDNewItem is pointer-sized so it can
+    // hold an HMENU for MF_POPUP submenus (a uint would truncate a 64-bit handle).
+    [LibraryImport("user32.dll", StringMarshalling = StringMarshalling.Utf16, EntryPoint = "AppendMenuW")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool AppendMenuPopup(IntPtr hMenu, uint uFlags, IntPtr uIDNewItem, string? lpNewItem);
+
+    [LibraryImport("user32.dll")]
+    internal static partial int TrackPopupMenuEx(IntPtr hmenu, uint fuFlags, int x, int y, IntPtr hwnd, IntPtr lptpm);
+
+    internal const uint MF_STRING = 0x00000000;
+    internal const uint MF_ENABLED = 0x00000000;
+    internal const uint MF_GRAYED = 0x00000001;
+    internal const uint MF_SEPARATOR = 0x00000800;
+    internal const uint MF_POPUP = 0x00000010;
+    internal const uint MF_CHECKED = 0x00000008;
+    internal const uint TPM_LEFTBUTTON = 0x0000;
+    internal const uint TPM_RIGHTBUTTON = 0x0002;
+    internal const uint TPM_LEFTALIGN = 0x0000;
+    internal const uint TPM_RIGHTALIGN = 0x0008;
+    internal const uint TPM_BOTTOMALIGN = 0x0020;
+    internal const uint TPM_NONOTIFY = 0x0080;
+    internal const uint TPM_RETURNCMD = 0x0100;
+    internal const uint TPM_VERPOSANIMATION = 0x0400;
 }
