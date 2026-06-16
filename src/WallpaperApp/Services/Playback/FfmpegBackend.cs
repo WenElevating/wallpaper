@@ -132,10 +132,11 @@ public sealed class FfmpegBackend : IPlaybackBackend
                 _avFrame = FfmpegNative.av_frame_alloc();
                 _avPacket = FfmpegNative.av_packet_alloc();
 
-                _bufferA = FfmpegNative.av_malloc((ulong)_frameSize);
-                _bufferB = FfmpegNative.av_malloc((ulong)_frameSize);
-                if (_bufferA == IntPtr.Zero || _bufferB == IntPtr.Zero)
-                    return Fail("av_malloc failed for double buffers");
+                // NOTE: the CPU double-buffers (_bufferA/__bufferB) are allocated
+                // LAZILY by EnsureCpuBuffers() on first use of the sws_scale path,
+                // NOT here. In zero-copy mode (the common case) the sws path is
+                // never taken, so pre-allocating two frame-sized BGRA buffers here
+                // would waste ~16MB at 1080p / ~66MB at 4K for nothing.
 
                 _timeBase = ReadTimeBase(streamPtr);
                 var streamDuration = Marshal.ReadInt64(streamPtr, FfmpegOffsets.StreamDurationOffset);
@@ -323,6 +324,9 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
                     var pts = Marshal.ReadInt64(_avFrame, FfmpegOffsets.FrameBestEffortPts);
 
+                    if (!EnsureCpuBuffers())
+                        return null;
+
                     var activeBuffer = _useBufferA ? _bufferA : _bufferB;
                     _useBufferA = !_useBufferA;
 
@@ -403,6 +407,26 @@ public sealed class FfmpegBackend : IPlaybackBackend
         if (_codecCtx != IntPtr.Zero)
             FfmpegNative.avcodec_free_context(ref _codecCtx);
         _hwDeviceRef = IntPtr.Zero;
+    }
+
+    // Lazily allocates the two CPU BGRA buffers the sws_scale path writes into.
+    // Skipped entirely in zero-copy mode (the common case), so those buffers —
+    // ~16MB at 1080p, ~66MB at 4K — are only paid for when the CPU color path is
+    // actually in use. Returns false only if av_malloc fails.
+    private bool EnsureCpuBuffers()
+    {
+        if (_bufferA != IntPtr.Zero && _bufferB != IntPtr.Zero)
+            return true;
+        if (_bufferA == IntPtr.Zero)
+            _bufferA = FfmpegNative.av_malloc((ulong)_frameSize);
+        if (_bufferB == IntPtr.Zero)
+            _bufferB = FfmpegNative.av_malloc((ulong)_frameSize);
+        if (_bufferA == IntPtr.Zero || _bufferB == IntPtr.Zero)
+        {
+            _logger.Warn("av_malloc failed for CPU double buffers");
+            return false;
+        }
+        return true;
     }
 
     private void Close()

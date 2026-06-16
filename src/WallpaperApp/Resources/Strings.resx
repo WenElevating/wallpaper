@@ -163,6 +163,12 @@
   <data name="SettingsLabel" xml:space="preserve">
     <value>Settings</value>
   </data>
+  <data name="PauseOnFullscreenLabel" xml:space="preserve">
+    <value>Pause when a fullscreen app is detected</value>
+  </data>
+  <data name="PauseOnBatteryLabel" xml:space="preserve">
+    <value>Pause while on battery power</value>
+  </data>
   <data name="MsgSetSuccessDesktop" xml:space="preserve">
     <value>Wallpaper set to desktop</value>
   </data>

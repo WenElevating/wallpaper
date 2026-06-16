@@ -64,6 +64,83 @@ public sealed class PlaybackSessionTests : IDisposable
             Directory.Delete(_tempDir, recursive: true);
     }
 
+    // A session is paused while ANY reason is present and only resumes once the
+    // last reason clears. These cover the reason-coordination contract that lets
+    // auto-pause (fullscreen/battery) coexist with the user's manual pause
+    // without one clobbering the other.
+    [Fact]
+    public async Task PauseReason_AutoResume_DoesNotClobberManualPause()
+    {
+        var (session, backend) = await StartSessionAsync();
+
+        // User manually pauses, then a fullscreen app pauses for its own reason.
+        await session.PauseAsync();                              // User
+        await session.ApplyPauseAsync(PauseReason.Fullscreen);   // Fullscreen
+        Assert.True(backend.IsPaused);
+
+        // Leaving fullscreen clears ONLY the Fullscreen reason. The user's pause
+        // is still active, so the session must STAY paused.
+        await session.ClearPauseAsync(PauseReason.Fullscreen);
+        Assert.True(backend.IsPaused);
+
+        // Only once the user resumes too does playback actually resume.
+        await session.ResumeAsync();
+        Assert.False(backend.IsPaused);
+
+        await session.StopAsync();
+    }
+
+    [Fact]
+    public async Task PauseReason_SecondReason_DoesNotRedundantlyPause()
+    {
+        var (session, backend) = await StartSessionAsync();
+
+        await session.PauseAsync();                              // User -> paused
+        await session.ApplyPauseAsync(PauseReason.Power);        // Power added
+        Assert.True(backend.IsPaused);
+
+        // User resumes while Power still holds -> stays paused.
+        await session.ResumeAsync();
+        Assert.True(backend.IsPaused);
+
+        // Clearing the last reason (Power) finally resumes.
+        await session.ClearPauseAsync(PauseReason.Power);
+        Assert.False(backend.IsPaused);
+
+        await session.StopAsync();
+    }
+
+    [Fact]
+    public async Task PauseReason_ClearingInactiveReason_IsNoOp()
+    {
+        var (session, backend) = await StartSessionAsync();
+        await session.PauseAsync();                              // User -> paused
+        // Clearing a reason that was never set must not resume the session.
+        await session.ClearPauseAsync(PauseReason.Fullscreen);
+        Assert.True(backend.IsPaused);
+        await session.ResumeAsync();
+        Assert.False(backend.IsPaused);
+        await session.StopAsync();
+    }
+
+    // Starts a session (so its _backend is assigned) with a renderer that keeps
+    // it "playing" long enough to drive the reason methods, then returns it.
+    private async Task<(PlaybackSession session, FakePlaybackBackend backend)> StartSessionAsync()
+    {
+        var backend = new FakePlaybackBackend(CreateFrame());
+        var renderer = new FakeRenderer(true);
+        var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        var session = new PlaybackSession(
+            Guid.NewGuid(), "fake.mp4", 0, 0, 1, 1,
+            (_, _, _, _) => surface,
+            (_, _, _, _) => renderer,
+            () => backend,
+            () => throw new NotImplementedException(),
+            _logger);
+        await session.StartAsync();
+        return (session, backend);
+    }
+
     private static FrameData CreateFrame()
     {
         var size = 4 * 4;

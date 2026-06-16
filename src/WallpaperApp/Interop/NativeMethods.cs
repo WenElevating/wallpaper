@@ -338,4 +338,27 @@ internal static partial class NativeMethods
     internal const uint TPM_NONOTIFY = 0x0080;
     internal const uint TPM_RETURNCMD = 0x0100;
     internal const uint TPM_VERPOSANIMATION = 0x0400;
+
+    // ---------- Power status (battery / AC) ----------
+
+    // Reads the system power status. Returns false on failure (rare; treated as
+    // "on AC" by callers). The struct is fully blittable so LibraryImport works.
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool GetSystemPowerStatus(out SYSTEM_POWER_STATUS lpSystemPowerStatus);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct SYSTEM_POWER_STATUS
+    {
+        public byte ACLineStatus;       // 0 = offline (battery), 1 = online (AC), 255 = unknown
+        public byte BatteryFlag;        // bit flags; 128 = no battery
+        public byte BatteryLifePercent; // 0-100; 255 = unknown
+        public byte SystemStatusFlag;   // 1 = battery saver active (Win10+)
+        public uint BatteryLifeTime;    // seconds remaining; 0xFFFFFFFF = unknown
+        public uint BatteryFullLifeTime;
+    }
+
+    internal const byte ACLineOffline = 0;
+    internal const byte ACLineOnline = 1;
+    internal const byte ACLineUnknown = 255;
 }

@@ -366,4 +366,30 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(HeaderTitle)); // localized labels may change
         _logger.Info($"Language set to {code}");
     }
+
+    // Settings-page toggles. The underlying AppSettings is a record with init-only
+    // setters, so these façade properties hold a mutable projection: the setter
+    // produces an immutable `with` copy, persists it, and raises change so the
+    // checkbox and the live consumers (fullscreen/power controllers read
+    // Settings directly) stay in sync.
+    public bool IsGlobalPauseOnFullscreen
+    {
+        get => Settings.GlobalPauseOnFullscreen;
+        set => UpdatePerfSetting(s => s with { GlobalPauseOnFullscreen = value });
+    }
+
+    public bool IsPauseOnBattery
+    {
+        get => Settings.PauseOnBattery;
+        set => UpdatePerfSetting(s => s with { PauseOnBattery = value });
+    }
+
+    private async void UpdatePerfSetting(Func<AppSettings, AppSettings> change)
+    {
+        Settings = change(Settings);
+        OnPropertyChanged(nameof(IsGlobalPauseOnFullscreen));
+        OnPropertyChanged(nameof(IsPauseOnBattery));
+        try { await _settings.SaveAsync(Settings); }
+        catch (Exception ex) { _logger.Warn($"Failed to save settings: {ex.Message}"); }
+    }
 }

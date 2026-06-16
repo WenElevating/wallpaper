@@ -3,6 +3,7 @@ using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using WallpaperApp.Data;
 using WallpaperApp.Localization;
+using WallpaperApp.Models;
 using WallpaperApp.Services.Desktop;
 using WallpaperApp.Services.Library;
 using WallpaperApp.Services.Logging;
@@ -19,6 +20,7 @@ public partial class App : Application
 {
     private ServiceProvider? _serviceProvider;
     private TrayIcon? _trayIcon;
+    private PowerAwareController? _powerAware;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -99,6 +101,28 @@ public partial class App : Application
             desktopHost.Attach();
             logger.Info($"DesktopHost attached: {desktopHost.IsAttached}");
 
+            // Wire the fullscreen detector (registered but previously never
+            // started) to pause wallpapers while a fullscreen app is in the
+            // foreground, and the power controller to pause on battery. Both
+            // read the CURRENT settings (the user can toggle them at runtime), so
+            // they take a Func<AppSettings> accessor rather than a snapshot.
+            var playback = _serviceProvider.GetRequiredService<PlaybackManager>();
+            var fullscreen = _serviceProvider.GetRequiredService<FullscreenDetector>();
+            System.Func<AppSettings> currentSettings = () => viewModel.Settings;
+            fullscreen.FullscreenStateChanged += (s, isFullscreen) =>
+            {
+                if (!currentSettings().GlobalPauseOnFullscreen) return;
+                _ = isFullscreen
+                    ? playback.PauseAllAsync(PauseReason.Fullscreen)
+                    : playback.ResumeAllAsync(PauseReason.Fullscreen);
+            };
+            // Start after monitors are known (the detector evaluates window
+            // coverage against MonitorManager rects).
+            fullscreen.Start();
+
+            _powerAware = new PowerAwareController(logger, playback, currentSettings);
+            _powerAware.Start();
+
             _trayIcon = new TrayIcon(viewModel, logger);
 
             if (!appSettings.StartMinimizedToTray)
@@ -161,6 +185,8 @@ public partial class App : Application
 
             var fullscreen = _serviceProvider.GetService<FullscreenDetector>();
             fullscreen?.Dispose();
+
+            _powerAware?.Dispose();
 
             var logger = _serviceProvider.GetService<FileLogger>();
             logger?.Dispose();

@@ -163,6 +163,12 @@
   <data name="SettingsLabel" xml:space="preserve">
     <value>设置</value>
   </data>
+  <data name="PauseOnFullscreenLabel" xml:space="preserve">
+    <value>检测到全屏应用时暂停</value>
+  </data>
+  <data name="PauseOnBatteryLabel" xml:space="preserve">
+    <value>使用电池时暂停</value>
+  </data>
   <data name="MsgSetSuccessDesktop" xml:space="preserve">
     <value>壁纸已设置到桌面</value>
   </data>

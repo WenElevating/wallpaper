@@ -21,6 +21,34 @@
                     </ComboBox>
                 </Grid>
             </Border>
+
+            <Border Background="{StaticResource CardSurfaceBrush}"
+                    BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                    CornerRadius="10" Padding="16,13" Margin="0,12,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{loc:Loc PauseOnFullscreenLabel}" VerticalAlignment="Center" FontSize="14"/>
+                    <CheckBox Grid.Column="1" x:Name="PauseOnFullscreenCheckBox" VerticalAlignment="Center"
+                              IsChecked="{Binding IsGlobalPauseOnFullscreen, Mode=TwoWay}"/>
+                </Grid>
+            </Border>
+
+            <Border Background="{StaticResource CardSurfaceBrush}"
+                    BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                    CornerRadius="10" Padding="16,13" Margin="0,12,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{loc:Loc PauseOnBatteryLabel}" VerticalAlignment="Center" FontSize="14"/>
+                    <CheckBox Grid.Column="1" x:Name="PauseOnBatteryCheckBox" VerticalAlignment="Center"
+                              IsChecked="{Binding IsPauseOnBattery, Mode=TwoWay}"/>
+                </Grid>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

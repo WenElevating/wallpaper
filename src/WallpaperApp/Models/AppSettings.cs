@@ -7,6 +7,8 @@ public record AppSettings
     public bool LaunchAtStartup { get; init; }
     public bool StartMinimizedToTray { get; init; }
     public bool GlobalPauseOnFullscreen { get; init; } = true;
+    /// <summary>Pause all wallpapers while running on battery power (laptops).</summary>
+    public bool PauseOnBattery { get; init; } = true;
     public FitMode DefaultFitMode { get; init; } = FitMode.Fill;
     public bool HardwareAccelerationEnabled { get; init; } = true;
     public string LogVerbosity { get; init; } = "Info";

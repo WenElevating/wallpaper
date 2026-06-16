@@ -6,6 +6,18 @@ using WallpaperApp.Services.Logging;
 
 namespace WallpaperApp.Services.Playback;
 
+// Why a playback session is paused. Multiple independent sources can pause a
+// session at once (the user via the tray, a fullscreen app, battery); the
+// session stays paused while ANY reason is present and only resumes once the
+// LAST reason is cleared. This prevents an auto-resume (e.g. leaving a
+// fullscreen app) from clobbering a pause the user set manually, and vice versa.
+public enum PauseReason
+{
+    User,
+    Fullscreen,
+    Power,
+}
+
 // Owns the entire per-monitor render pipeline on a SINGLE dedicated thread:
 // the wallpaper window, the D2D render target, the decode backend, and the
 // frame loop. Everything is created AND used on that one thread.
@@ -31,6 +43,12 @@ public sealed class PlaybackSession : IDisposable
     private Thread? _thread;
     private TaskCompletionSource<bool>? _readyTcs;
     private bool _disposed;
+
+    // Pause reasons currently active on this session. Guarded by _pauseLock
+    // because Pause/Resume are driven from the PlaybackManager (threadpool),
+    // not the render thread. Empty = playing; non-empty = paused.
+    private readonly HashSet<PauseReason> _pauseReasons = new();
+    private readonly object _pauseLock = new();
 
     // Owned by the render thread only.
     private IWallpaperSurface? _surface;
@@ -101,11 +119,48 @@ public sealed class PlaybackSession : IDisposable
         _logger.Info($"Session stopped for monitor {_monitorId}");
     }
 
-    public Task PauseAsync(CancellationToken ct = default)
-        => _backend?.PauseAsync(ct) ?? Task.CompletedTask;
+    public Task PauseAsync(CancellationToken ct = default) => ApplyPauseAsync(PauseReason.User, ct);
+    public Task ResumeAsync(CancellationToken ct = default) => ClearPauseAsync(PauseReason.User, ct);
 
-    public Task ResumeAsync(CancellationToken ct = default)
-        => _backend?.ResumeAsync(ct) ?? Task.CompletedTask;
+    // Adds a pause reason. Calls the backend's PauseAsync only on the empty->
+    // non-empty transition (no-op if already paused for any reason), so a
+    // second reason never re-issues a redundant pause.
+    public async Task ApplyPauseAsync(PauseReason reason, CancellationToken ct = default)
+    {
+        IPlaybackBackend? backend;
+        lock (_pauseLock)
+        {
+            if (!_pauseReasons.Add(reason))
+                return; // this reason already active; nothing to transition
+            if (_pauseReasons.Count != 1)
+                return; // was already paused by another reason; backend already paused
+            backend = _backend;
+        }
+        if (backend != null)
+        {
+            try { await backend.PauseAsync(ct); } catch { }
+        }
+    }
+
+    // Removes a pause reason. Calls the backend's ResumeAsync only when the
+    // last reason is cleared — so an auto-resume (e.g. leaving fullscreen)
+    // never clobbers a pause still held for another reason.
+    public async Task ClearPauseAsync(PauseReason reason, CancellationToken ct = default)
+    {
+        IPlaybackBackend? backend;
+        lock (_pauseLock)
+        {
+            if (!_pauseReasons.Remove(reason))
+                return; // this reason wasn't active; nothing to transition
+            if (_pauseReasons.Count != 0)
+                return; // still paused by another reason; stay paused
+            backend = _backend;
+        }
+        if (backend != null)
+        {
+            try { await backend.ResumeAsync(ct); } catch { }
+        }
+    }
 
     // Runs entirely on the dedicated render thread.
     private void Run(CancellationToken ct)

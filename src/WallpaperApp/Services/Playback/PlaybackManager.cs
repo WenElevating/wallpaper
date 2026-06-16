@@ -117,22 +117,29 @@ public sealed class PlaybackManager : IDisposable
         }
     }
 
-    public async Task PauseAllAsync(CancellationToken ct = default)
+    // Pauses every active session for the given reason (default User, the
+    // manual/tray pause). Each session tracks reasons independently: a session
+    // is paused while ANY reason is present, and only resumes once its last
+    // reason clears — so an auto-resume can't clobber a pause held for another
+    // reason. Reason accounting lives in PlaybackSession.ApplyPauseAsync.
+    public Task PauseAllAsync(CancellationToken ct = default) => PauseAllAsync(PauseReason.User, ct);
+    public async Task PauseAllAsync(PauseReason reason, CancellationToken ct = default)
     {
         PlaybackSession[] sessions;
         lock (_lock) { sessions = _sessions.Values.ToArray(); }
         foreach (var s in sessions)
-            if (s.IsPlaying && !s.IsPaused)
-                await s.PauseAsync(ct);
+            if (s.IsPlaying)
+                await s.ApplyPauseAsync(reason, ct);
     }
 
-    public async Task ResumeAllAsync(CancellationToken ct = default)
+    public Task ResumeAllAsync(CancellationToken ct = default) => ResumeAllAsync(PauseReason.User, ct);
+    public async Task ResumeAllAsync(PauseReason reason, CancellationToken ct = default)
     {
         PlaybackSession[] sessions;
         lock (_lock) { sessions = _sessions.Values.ToArray(); }
         foreach (var s in sessions)
-            if (s.IsPlaying && s.IsPaused)
-                await s.ResumeAsync(ct);
+            if (s.IsPlaying)
+                await s.ClearPauseAsync(reason, ct);
     }
 
     public async Task StopAllAsync(CancellationToken ct = default)

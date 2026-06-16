@@ -26,6 +26,12 @@ public sealed class FullscreenDetector : IDisposable
     public void Start()
     {
         _pollTimer.Start();
+        // Force an initial evaluation: reset the cached foreground window so the
+        // first Poll() can't early-return. Without this, if a fullscreen app is
+        // ALREADY in the foreground at startup, no state change would fire until
+        // the user switches windows away and back.
+        _lastForegroundWindow = IntPtr.Zero;
+        Poll();
         _logger.Debug("Fullscreen detector started");
     }
 
