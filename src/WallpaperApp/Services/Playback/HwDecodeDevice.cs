@@ -54,10 +54,26 @@ public static class HwDecodeDevice
             var hwctx = Marshal.ReadIntPtr(hwDeviceCtx, FfmpegOffsets.AvHwDeviceCtxHwctxOffset);
             Marshal.WriteIntPtr(hwctx, FfmpegOffsets.AvD3D11VaDeviceOffset, d3d11Device);
 
+            // CRITICAL: FFmpeg's AVD3D11VADeviceContext docs state:
+            //   "Deallocating the AVHWDeviceContext will always release this
+            //    interface, and it does not matter whether it was user-allocated."
+            //
+            // We must AddRef the device here to create a reference that FFmpeg
+            // will Release on uninit (av_buffer_unref → d3d11va_device_uninit).
+            // Without this, each init/uninit cycle drops the device's COM ref
+            // count, and after enough cycles the device is destroyed. All
+            // subsequent calls receive a dangling pointer → AccessViolation.
+            Marshal.AddRef(d3d11Device);
+
             // init fills device_context / video_device / video_context / lock from device.
             var hr = FfmpegNative.av_hwdevice_ctx_init(bufRef);
             if (hr < 0)
             {
+                // Init failed. In our bundled FFmpeg build, a failed
+                // av_hwdevice_ctx_init does NOT run d3d11va_device_uninit
+                // (verified empirically), so the ref we added above would
+                // leak. Release it here to keep the count balanced.
+                Marshal.Release(d3d11Device);
                 Logger?.Warn($"av_hwdevice_ctx_init failed for shared device: 0x{hr:X8}");
                 FfmpegNative.av_buffer_unref(ref bufRef);
                 return IntPtr.Zero;

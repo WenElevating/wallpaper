@@ -199,8 +199,10 @@ public sealed class DxgiRenderer : IFrameRenderer
         try
         {
             Step("ensure-rtv", () => EnsureRtv());
-            Step("addref", () => Marshal.AddRef(frame.Texture));
-            Step("frompointer", () => { decodedTex = MarshallingHelpers.FromPointer<ID3D11Texture2D>(frame.Texture); });
+            // AddRef the decoded texture so it stays alive during Present.
+            // FromPointer wraps the pointer for Dispose(); the finally block's
+            // decodedTex.Dispose() releases the ref, balancing our AddRef.
+            Marshal.AddRef(frame.Texture);
             decodedTex = MarshallingHelpers.FromPointer<ID3D11Texture2D>(frame.Texture);
         }
         catch (Exception ex)
