@@ -134,7 +134,7 @@ public sealed class DxgiRenderer : IFrameRenderer
     private void EnsureZeroCopyResources(ID3D11Device dev, int w, int h)
     {
         if (_vs is null) _vs = dev.CreateVertexShader(_vsBc!);
-        if (_ps is null) _ps = dev.CreatePixelShader(_vsBc!);
+        if (_ps is null) _ps = dev.CreatePixelShader(_psBc!);
         if (_sampler is null)
         {
             _sampler = dev.CreateSamplerState(new SamplerDescription
