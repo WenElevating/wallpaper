@@ -389,4 +389,54 @@ internal static partial class NativeMethods
     internal static partial IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
 
     internal const uint MONITOR_DEFAULTTOPRIMARY = 1;
+
+    // ---------- DXGI occlusion status event (kernel32 sync primitives) ----------
+    // Used by DxgiRenderer to get a notification when its swap chain (the
+    // wallpaper window) becomes occluded — see RegisterOcclusionStatusEvent.
+
+    [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial IntPtr CreateEventW(IntPtr lpEventAttributes, [MarshalAs(UnmanagedType.Bool)] bool bManualReset, [MarshalAs(UnmanagedType.Bool)] bool bInitialState, string? lpName);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool CloseHandle(IntPtr hObject);
+
+    // WaitForSingleObject: returns WAIT_OBJECT_0 (0) when signaled.
+    internal const uint WAIT_OBJECT_0 = 0;
+    internal const uint WAIT_TIMEOUT = 0x00000102;
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    internal static partial uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+
+    [LibraryImport("kernel32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool ResetEvent(IntPtr hEvent);
+
+    // ---------- Wallpaper visibility (Z-order region subtraction, GDI) ----------
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool IsIconic(IntPtr hWnd);
+
+    // EnumWindows enumerates top-level windows in Z order, top to bottom.
+    // (Declared earlier in this file; reused for the Z-order region subtraction.)
+
+    // GDI region API for accumulating visible area: start with the monitor rect,
+    // subtract each higher-Z window's rect; if the region is empty afterward,
+    // the wallpaper on that monitor is fully covered.
+    [LibraryImport("gdi32.dll")]
+    internal static partial IntPtr CreateRectRgn(int nLeftRect, int nTopRect, int nRightRect, int nBottomRect);
+
+    [LibraryImport("gdi32.dll")]
+    internal static partial int CombineRgn(IntPtr hrgnDest, IntPtr hrgnSrc1, IntPtr hrgnSrc2, int fnCombineMode);
+
+    [LibraryImport("gdi32.dll")]
+    internal static partial int GetRgnBox(IntPtr hrgn, out RECT lprc);
+
+    internal const int RGN_DIFF = 4;   // dst = src1 minus src2
+    internal const int RGN_AND = 1;
+    internal const int NULLREGION = 1; // region is empty
+    internal const int SIMPLEREGION = 2;
+    internal const int COMPLEXREGION = 3;
+    internal const int ERROR_RGN = 0;
 }

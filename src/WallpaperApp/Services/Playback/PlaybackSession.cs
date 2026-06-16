@@ -16,6 +16,7 @@ public enum PauseReason
     User,
     Fullscreen,
     Power,
+    Occluded, // wallpaper fully covered by other windows (not visible)
 }
 
 // Owns the entire per-monitor render pipeline on a SINGLE dedicated thread:

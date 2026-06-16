@@ -120,6 +120,21 @@ public partial class App : Application
             // coverage against MonitorManager rects).
             fullscreen.Start();
 
+            // Wallpaper visibility detector: pause when the wallpaper is fully
+            // covered by other windows on any monitor (maximized browser, tiling
+            // windows, etc. — not just fullscreen). Shares the same setting gate
+            // as the fullscreen detector; uses its own PauseReason so the two
+            // never clobber each other's state.
+            var visibility = _serviceProvider.GetRequiredService<WallpaperVisibilityDetector>();
+            visibility.VisibilityChanged += (s, isVisible) =>
+            {
+                if (!currentSettings().GlobalPauseOnFullscreen) return;
+                _ = isVisible
+                    ? playback.ResumeAllAsync(PauseReason.Occluded)
+                    : playback.PauseAllAsync(PauseReason.Occluded);
+            };
+            visibility.Start();
+
             _powerAware = new PowerAwareController(logger, playback, currentSettings);
             _powerAware.Start();
 
@@ -163,6 +178,7 @@ public partial class App : Application
         services.AddSingleton<DesktopHost>();
         services.AddSingleton<MonitorManager>();
         services.AddSingleton<FullscreenDetector>();
+        services.AddSingleton<WallpaperVisibilityDetector>();
         services.AddSingleton<MainViewModel>();
     }
 
@@ -185,6 +201,9 @@ public partial class App : Application
 
             var fullscreen = _serviceProvider.GetService<FullscreenDetector>();
             fullscreen?.Dispose();
+
+            var visibility = _serviceProvider.GetService<WallpaperVisibilityDetector>();
+            visibility?.Dispose();
 
             _powerAware?.Dispose();
 

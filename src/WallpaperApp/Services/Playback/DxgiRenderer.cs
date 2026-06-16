@@ -4,6 +4,7 @@ using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
 using Vortice.Mathematics;
+using WallpaperApp.Interop;
 using WallpaperApp.Services.Logging;
 using static Vortice.Direct3D11.D3D11;
 using FeatureLevel = Vortice.Direct3D.FeatureLevel;
@@ -51,6 +52,20 @@ public sealed class DxgiRenderer : IFrameRenderer
     private IDXGISwapChain3? _swapChain;
     private ID3D11Texture2D? _stagingTexture; // CPU upload path
     private readonly ID3D11RenderTargetView?[] _rtvs = new ID3D11RenderTargetView?[2];
+
+    // DXGI occlusion: RegisterOcclusionStatusEvent signals this event when the
+    // swap chain's window becomes occluded (fully covered by other windows).
+    // We check it per-frame; when occluded we skip rendering entirely. The
+    // _occlusionCookie is from RegisterOcclusionStatusEvent; the manual-reset
+    // event is owned here and released with the device.
+    private IntPtr _occlusionEvent = IntPtr.Zero;
+    private int _occlusionCookie;
+    private volatile bool _occluded;
+
+    // DXGI_STATUS_OCCLUDED: a SUCCESS HRESULT the swap chain's Present returns
+    // when its window is occluded. Vortice's Result.Failure is false for it, so
+    // we compare the raw code explicitly.
+    private const int DXGI_STATUS_OCCLUDED = unchecked((int)0x087A0001);
 
     private int _frameWidth;
     private int _frameHeight;
@@ -165,6 +180,28 @@ public sealed class DxgiRenderer : IFrameRenderer
     public bool Present(FrameData frame)
     {
         if (_disposed) return false;
+
+        // DXGI occlusion handling. RegisterOcclusionStatusEvent signals a
+        // manual-reset event when the swap chain's occlusion status CHANGES.
+        // We don't trust it for the new state — the source of truth is the
+        // Present() return code (DXGI_STATUS_OCCLUDED, a success code Vortice's
+        // .Failure won't catch, compared explicitly below).
+        //
+        // Strategy: while we believe the window is occluded AND no change event
+        // has fired, skip rendering entirely (returns success so the session
+        // doesn't treat it as device loss). The moment an event fires, we let a
+        // real Present through; UpdateOcclusionState flips _occluded based on
+        // the HRESULT, which either re-arms the skip (still occluded) or resumes
+        // normal rendering (visible again).
+        if (_occlusionEvent != IntPtr.Zero && _occluded)
+        {
+            var waited = NativeMethods.WaitForSingleObject(_occlusionEvent, 0);
+            if (waited != NativeMethods.WAIT_OBJECT_0)
+                return true; // still occluded, no change signal — skip this frame
+            NativeMethods.ResetEvent(_occlusionEvent);
+            // change signaled — fall through to a real Present to re-evaluate
+        }
+
         try
         {
             return frame.IsGpu && _zcInited ? PresentGpu(frame) : PresentCpu(frame);
@@ -257,6 +294,7 @@ public sealed class DxgiRenderer : IFrameRenderer
             _logger.Warn($"GPU Present failed: 0x{presentHr.Code:X8}; recreating device");
             ReleaseDevice();
         }
+        UpdateOcclusionState(presentHr.Code);
         return true;
     }
 
@@ -310,6 +348,7 @@ public sealed class DxgiRenderer : IFrameRenderer
             _logger.Warn($"Present failed: 0x{presentHr.Code:X8}; recreating device");
             ReleaseDevice();
         }
+        UpdateOcclusionState(presentHr.Code);
         return true;
     }
 
@@ -362,6 +401,8 @@ public sealed class DxgiRenderer : IFrameRenderer
             _dxgiFactory = adapter.GetParent<IDXGIFactory2>();
             dxgiDevice.Dispose();
             adapter.Dispose();
+
+            RegisterOcclusion();
 
             if (!CreateSwapChain(frameWidth, frameHeight))
                 return false;
@@ -468,9 +509,74 @@ public sealed class DxgiRenderer : IFrameRenderer
         }
         _device = null;
         _context = null;
+        UnregisterOcclusion();
         _dxgiFactory?.Dispose(); _dxgiFactory = null;
         _frameWidth = 0;
         _frameHeight = 0;
+    }
+
+    // Registers a manual-reset event with DXGI; the OS signals it whenever the
+    // swap chain's occlusion status changes. We poll it per-frame in Present().
+    // Non-fatal: if registration fails we simply have no occlusion awareness
+    // and keep rendering unconditionally (the Z-order detector is the backup).
+    private void RegisterOcclusion()
+    {
+        if (_dxgiFactory is null) return;
+        try
+        {
+            UnregisterOcclusion();
+            _occlusionEvent = NativeMethods.CreateEventW(IntPtr.Zero, true, false, null);
+            if (_occlusionEvent == IntPtr.Zero) return;
+            // Vortice surfaces RegisterOcclusionStatusEvent as returning the
+            // registration cookie (an int; 0 means registration failed). The
+            // native HRESULT is dropped, but a zero cookie reliably indicates
+            // failure per the DXGI docs.
+            _occlusionCookie = _dxgiFactory.RegisterOcclusionStatusEvent(_occlusionEvent);
+            if (_occlusionCookie == 0)
+            {
+                _logger.Warn("RegisterOcclusionStatusEvent returned 0; no DXGI occlusion awareness");
+                NativeMethods.CloseHandle(_occlusionEvent);
+                _occlusionEvent = IntPtr.Zero;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"RegisterOcclusion failed: {ex.Message}");
+        }
+    }
+
+    private void UnregisterOcclusion()
+    {
+        if (_occlusionEvent != IntPtr.Zero && _dxgiFactory is not null)
+        {
+            try { _dxgiFactory.UnregisterOcclusionStatus(_occlusionCookie); } catch { }
+        }
+        if (_occlusionEvent != IntPtr.Zero)
+        {
+            try { NativeMethods.CloseHandle(_occlusionEvent); } catch { }
+        }
+        _occlusionEvent = IntPtr.Zero;
+        _occlusionCookie = 0;
+        _occluded = false;
+    }
+
+    // True when DXGI reports the swap chain's window is occluded (fully covered
+    // by other windows). Read by PlaybackSession to skip decoding+rendering.
+    public bool IsOccluded => _occluded;
+
+    // Interprets the Present() HRESULT to update the occlusion flag. Called after
+    // every real Present. DXGI_STATUS_OCCLUDED (a success code) means the window
+    // is covered; anything else means visible.
+    private void UpdateOcclusionState(int presentCode)
+    {
+        var wasOccluded = _occluded;
+        _occluded = presentCode == DXGI_STATUS_OCCLUDED;
+        if (_occluded != wasOccluded)
+        {
+            _logger.Info(_occluded
+                ? "DXGI occlusion: swap chain window occluded, will skip render until visible"
+                : "DXGI occlusion: window visible again, resuming render");
+        }
     }
 
     public void Dispose()
