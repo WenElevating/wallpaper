@@ -418,6 +418,14 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool IsIconic(IntPtr hWnd);
 
+    // IsZoomed: window is maximized. Maximized windows cover the monitor's work
+    // area, but their GetWindowRect is intentionally larger than the monitor
+    // (the resize borders are drawn off-screen, ~8px each side) — so region math
+    // against GetWindowRect is unreliable for them. IsZoomed is the robust test.
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool IsZoomed(IntPtr hWnd);
+
     // EnumWindows enumerates top-level windows in Z order, top to bottom.
     // (Declared earlier in this file; reused for the Z-order region subtraction.)
 

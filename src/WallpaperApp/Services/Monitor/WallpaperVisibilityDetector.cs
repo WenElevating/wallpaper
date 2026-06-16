@@ -94,6 +94,18 @@ public sealed class WallpaperVisibilityDetector : IDisposable
             if (NativeMethods.IsIconic(hwnd)) return true;
             if (IsShellWindow(hwnd)) return true;
 
+            // Maximized windows fully cover their monitor's work area, BUT their
+            // GetWindowRect is intentionally ~8px larger than the monitor on each
+            // side (the resize borders are drawn off-screen). That overhang makes
+            // naive rect subtraction unreliable, so for maximized windows we
+            // subtract the monitor's OWN rect instead — guaranteeing the monitor
+            // region empties regardless of the overhang geometry.
+            if (NativeMethods.IsZoomed(hwnd))
+            {
+                monitors.SubtractMonitorOf(hwnd);
+                return true;
+            }
+
             if (!NativeMethods.GetWindowRect(hwnd, out var wr)) return true;
 
             monitors.Subtract(wr);
@@ -124,6 +136,7 @@ public sealed class WallpaperVisibilityDetector : IDisposable
     private sealed class MonitorRegions : IDisposable
     {
         private readonly List<IntPtr> _regions = new();
+        private readonly List<NativeMethods.RECT> _rects = new();
         private readonly bool[] _covered;
 
         public int Count => _regions.Count;
@@ -148,10 +161,30 @@ public sealed class WallpaperVisibilityDetector : IDisposable
         {
             foreach (var r in monitors)
             {
-                var region = NativeMethods.CreateRectRgn(r.Left, r.Top, r.Right, r.Bottom);
-                _regions.Add(region);
+                _rects.Add(r);
+                _regions.Add(NativeMethods.CreateRectRgn(r.Left, r.Top, r.Right, r.Bottom));
             }
             _covered = new bool[_regions.Count];
+        }
+
+        // Marks the monitor the window is on as fully covered. Used for maximized
+        // windows whose GetWindowRect is unreliable (off-screen border overhang).
+        public void SubtractMonitorOf(IntPtr hwnd)
+        {
+            var hMon = NativeMethods.MonitorFromWindow(hwnd, NativeMethods.MONITOR_DEFAULTTOPRIMARY);
+            for (var i = 0; i < _rects.Count; i++)
+            {
+                // MonitorFromWindow can't give us a handle to compare against
+                // directly here, so match by rect equality against the monitor's
+                // own rectangle — the window's monitor rect equals one we hold.
+                if (_covered[i]) continue;
+                var mi = new NativeMethods.MONITORINFO { cbSize = System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.MONITORINFO>() };
+                if (NativeMethods.GetMonitorInfoW(hMon, ref mi) &&
+                    RectsEqual(mi.rcMonitor, _rects[i]))
+                {
+                    _covered[i] = true;
+                }
+            }
         }
 
         // Subtracts a window rect from every not-yet-covered monitor region.
@@ -177,6 +210,9 @@ public sealed class WallpaperVisibilityDetector : IDisposable
                 if (hole != IntPtr.Zero) NativeMethods.DeleteObject(hole);
             }
         }
+
+        private static bool RectsEqual(NativeMethods.RECT a, NativeMethods.RECT b)
+            => a.Left == b.Left && a.Top == b.Top && a.Right == b.Right && a.Bottom == b.Bottom;
 
         public void Dispose()
         {
