@@ -10,6 +10,7 @@ using WallpaperApp.Services.Monitor;
 using WallpaperApp.Services.Playback;
 using WallpaperApp.Services.Settings;
 using WallpaperApp.UI;
+using WallpaperApp.UI.Controls;
 using WallpaperApp.UI.ViewModels;
 
 namespace WallpaperApp;
@@ -58,6 +59,13 @@ public partial class App : Application
 
             var logger = _serviceProvider.GetRequiredService<FileLogger>();
             PosterCache.Logger = logger;
+            HwDecodeDevice.Logger = logger;
+            VideoFrameView.Logger = logger;
+
+            // Create the shared GPU device and hand it to the playback manager so
+            // decode + render share one D3D11 device (enables zero-copy GPU render).
+            var gpu = _serviceProvider.GetRequiredService<GpuDevice>();
+            _serviceProvider.GetRequiredService<PlaybackManager>().Gpu = gpu;
 
             logger.Info("WallpaperApp starting...");
 
@@ -120,6 +128,7 @@ public partial class App : Application
     {
         var logDir = Path.Combine(AppContext.BaseDirectory, "logs");
         services.AddSingleton(new FileLogger(logDir));
+        services.AddSingleton<GpuDevice>();
         services.AddTransient<AppDbContext>();
         services.AddSingleton<SettingsService>();
         services.AddSingleton<LibraryService>();
@@ -141,6 +150,11 @@ public partial class App : Application
         {
             var playback = _serviceProvider.GetService<PlaybackManager>();
             playback?.Dispose();
+
+            var gpu = _serviceProvider.GetService<GpuDevice>();
+            gpu?.Dispose();
+
+            HwDecodeDevice.Shutdown();
 
             var desktop = _serviceProvider.GetService<DesktopHost>();
             desktop?.Dispose();

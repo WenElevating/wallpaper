@@ -36,26 +36,15 @@ public partial class WallpaperDetailView : UserControl
     private void OnVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (IsVisible)
-        {
             ApplySource();
-            if (Player.Source != null) Player.Play();
-        }
         else
-        {
-            Player.Stop();
-        }
+            Player.Source = null; // stop the decode loop while the detail page is hidden
     }
 
     private void ApplySource()
     {
+        // Setting Source (a path string) starts the VideoFrameView decode loop.
         var path = (DataContext as MainViewModel)?.ActiveWallpaper?.ManagedFilePath;
-        Player.Source = string.IsNullOrEmpty(path) ? null : new Uri(path);
-        if (IsVisible && Player.Source != null) Player.Play();
-    }
-
-    private void Player_MediaEnded(object sender, RoutedEventArgs e)
-    {
-        try { Player.Position = TimeSpan.Zero; Player.Play(); }
-        catch { }
+        Player.Source = string.IsNullOrEmpty(path) ? null : path;
     }
 }

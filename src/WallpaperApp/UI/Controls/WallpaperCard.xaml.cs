@@ -4,6 +4,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using WallpaperApp.Models;
 using WallpaperApp.Services.Library;
 
@@ -60,9 +61,16 @@ public partial class WallpaperCard : UserControl
         if (path == null || !ReferenceEquals(DataContext, item)) return;
         try
         {
+            // Cards render at ~300px, so decode the poster small. Posters are
+            // otherwise saved at the video's full resolution (e.g. 3840x2160 for
+            // 4K), and BitmapImage with no DecodePixelWidth decompresses them to
+            // ~33MB EACH in RAM. With a non-virtualized library list that added up
+            // to hundreds of MB resident. DecodePixelWidth makes the JPEG decoder
+            // downscale during decode (cheap DCT scaling), cutting this to <1MB.
             var bmp = new BitmapImage();
             bmp.BeginInit();
             bmp.CacheOption = BitmapCacheOption.OnLoad;
+            bmp.DecodePixelWidth = 640;
             bmp.UriSource = new Uri(path);
             bmp.EndInit();
             bmp.Freeze();
@@ -71,16 +79,32 @@ public partial class WallpaperCard : UserControl
         catch { /* ignore — card just shows its surface color */ }
     }
 
-    private void Card_MouseEnter(object sender, MouseEventArgs e) => StartPreview();
-    private void Card_MouseLeave(object sender, MouseEventArgs e) => StopPreview();
+    // Debounce hover so quickly sweeping across cards doesn't spin up a decoder
+    // for each one (which janks the UI and churns decode sessions). Only cards
+    // the mouse actually rests on (~150ms) start a preview.
+    private DispatcherTimer? _hoverTimer;
+    private void Card_MouseEnter(object sender, MouseEventArgs e)
+    {
+        _hoverTimer?.Stop();
+        _hoverTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(150) };
+        _hoverTimer.Tick += (_, _) => { _hoverTimer!.Stop(); StartPreview(); };
+        _hoverTimer.Start();
+    }
+
+    private void Card_MouseLeave(object sender, MouseEventArgs e)
+    {
+        _hoverTimer?.Stop();
+        _hoverTimer = null;
+        StopPreview();
+    }
 
     private void StartPreview()
     {
         if (_isPlaying || string.IsNullOrEmpty(_managedPath)) return;
         try
         {
-            Player.Source = new Uri(_managedPath);
-            Player.Play();
+            // VideoFrameView.Source (a path string) starts its decode loop.
+            Player.Source = _managedPath;
             _isPlaying = true;
             Player.BeginAnimation(OpacityProperty,
                 new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(220)));
@@ -95,17 +119,10 @@ public partial class WallpaperCard : UserControl
         {
             Player.BeginAnimation(OpacityProperty, null);
             Player.Opacity = 0;
-            Player.Stop();
-            Player.Source = null;
+            Player.Source = null; // stops the decode loop + frees the bitmap
         }
         catch { }
         _isPlaying = false;
-    }
-
-    private void Player_MediaEnded(object sender, RoutedEventArgs e)
-    {
-        try { Player.Position = TimeSpan.Zero; Player.Play(); }
-        catch { }
     }
 
     private void Card_Click(object sender, MouseButtonEventArgs e)

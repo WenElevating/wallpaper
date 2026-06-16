@@ -23,6 +23,10 @@ public static class PosterCache
 
     private static readonly SemaphoreSlim Gate = new(1, 1);
 
+    // Posters are only shown as small library tiles, so cap the stored width.
+    // Anything wider wastes disk and decode time for no visible benefit.
+    private const int MaxPosterWidth = 512;
+
     // Must be set at startup (App) so the decoder can log. Null => skip extraction.
     public static FileLogger? Logger { get; set; }
 
@@ -53,8 +57,26 @@ public static class PosterCache
                     if (frame == null) return null;
 
                     // frame.Buffer is BGRA; Format32bppArgb is laid out B,G,R,A in memory.
-                    using var bmp = new Bitmap(frame.Width, frame.Height, frame.Stride, PixelFormat.Format32bppArgb, frame.Buffer);
-                    bmp.Save(posterPath, ImageFormat.Jpeg);
+                    // Downscale before saving: cards only ever show the poster at ~300px,
+                    // so storing the full video resolution (33MB+ for 4K) wastes disk and
+                    // forces the decoder to do more work on load. Cap at MaxPosterWidth.
+                    using var src = new Bitmap(frame.Width, frame.Height, frame.Stride, PixelFormat.Format32bppArgb, frame.Buffer);
+                    if (src.Width <= MaxPosterWidth)
+                    {
+                        src.Save(posterPath, ImageFormat.Jpeg);
+                    }
+                    else
+                    {
+                        var newHeight = (int)Math.Round((double)frame.Height * MaxPosterWidth / frame.Width);
+                        using var dst = new Bitmap(MaxPosterWidth, newHeight, PixelFormat.Format32bppArgb);
+                        using (var g = Graphics.FromImage(dst))
+                        {
+                            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+                            g.PixelOffsetMode = System.Drawing.Drawing2D.PixelOffsetMode.HighQuality;
+                            g.DrawImage(src, 0, 0, dst.Width, dst.Height);
+                        }
+                        dst.Save(posterPath, ImageFormat.Jpeg);
+                    }
                     return File.Exists(posterPath) ? posterPath : null;
                 }
                 finally

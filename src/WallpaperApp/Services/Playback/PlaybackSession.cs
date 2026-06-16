@@ -147,6 +147,17 @@ public sealed class PlaybackSession : IDisposable
             _backend.PlayAsync(ct).GetAwaiter().GetResult();
             _logger.Info($"Session started for monitor {_monitorId}");
 
+            // Decide zero-copy once per session: if the renderer can set up the
+            // NV12 shader path, the backend hands frames as GPU textures (no CPU
+            // color convert); otherwise the backend decodes to CPU BGRA and the
+            // renderer uploads it. Either way Present() handles the frame type.
+            var zeroCopy = _renderer is DxgiRenderer dx && dx.TryInitZeroCopy(_backend.VideoWidth, _backend.VideoHeight);
+            if (_backend is FfmpegBackend fb)
+                fb.PreferZeroCopy = zeroCopy;
+            _logger.Info(zeroCopy
+                ? $"Monitor {_monitorId}: zero-copy GPU render enabled (NV12 shader)"
+                : $"Monitor {_monitorId}: using CPU color pipeline");
+
             RenderLoop(ct);
         }
         catch (OperationCanceledException)
@@ -168,6 +179,7 @@ public sealed class PlaybackSession : IDisposable
     {
         var lastPts = -1L;
         var sw = new Stopwatch();
+        var loggedMode = false;
 
         while (!ct.IsCancellationRequested && _backend!.IsPlaying)
         {
@@ -210,6 +222,16 @@ public sealed class PlaybackSession : IDisposable
             // reports success only once the pipeline has actually rendered
             // end-to-end. Idempotent: the first TrySetResult wins.
             _readyTcs?.TrySetResult(ok);
+
+            // One-time diagnostic: report whether this session is actually
+            // decoding on the GPU (D3D11VA) or fell back to software. Software
+            // decode keeps H.264 reference frames in system RAM (~hundreds of
+            // MB) and burns a CPU core, so this is the key thing to watch.
+            if (!loggedMode)
+            {
+                loggedMode = true;
+                _logger.Info($"Monitor {_monitorId}: {_backend!.VideoWidth}x{_backend.VideoHeight} decoding via {(_backend.IsHardwareDecoding ? "D3D11VA (hardware)" : "SOFTWARE (fallback)")}");
+            }
 
             if (!ok)
             {

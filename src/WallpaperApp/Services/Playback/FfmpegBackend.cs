@@ -38,8 +38,33 @@ public sealed class FfmpegBackend : IPlaybackBackend
     private bool _isOpen;
     private bool _disposed;
 
+    // Hardware decode (optional). When provided, OpenAsync assigns a D3D11VA
+    // device context to the codec so decoded reference frames live in GPU
+    // memory instead of system RAM. The provider returns a fresh AVBufferRef*
+    // each call (or IntPtr.Zero to signal "use software").
+    private readonly Func<IntPtr>? _hwDeviceProvider;
+    private IntPtr _hwDeviceRef;   // ref assigned to the codec ctx; released by avcodec_free_context
+    private IntPtr _swFrame;       // lazily-allocated destination for av_hwframe_transfer_data
+    private bool _useHardware;
+
     public bool IsPlaying { get; private set; }
     public bool IsPaused { get; private set; }
+    // True only if at least one frame actually came back from the hardware
+    // decoder (AV_PIX_FMT_D3D11). _useHardware is "hw was attempted"; this is
+    // "hw is really in use" — the decoder can silently fall back to software.
+    private bool _decodedHw;
+    public bool IsHardwareDecoding => _decodedHw;
+    private bool _warnedSwFallback;
+
+    // When true and decoding on the shared GPU device, hw frames are handed to
+    // the renderer as D3D11 NV12 textures (zero-copy) instead of being
+    // transferred to CPU + sws_scale'd to BGRA. Set by PlaybackSession after the
+    // renderer confirms it can do the NV12 shader path; cleared to fall back to
+    // the CPU color pipeline.
+    public bool PreferZeroCopy { get; set; }
+    // True while a GPU frame is held out for the renderer (av_frame_unref'd on
+    // the next NextFrameAsync call, since Present is synchronous).
+    private bool _heldHwFrame;
     public TimeSpan Duration => TimeSpan.FromTicks(_durationUs * 10);
     public int VideoWidth => _width;
     public int VideoHeight => _height;
@@ -47,9 +72,10 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
     public event EventHandler? EndOfStream;
 
-    public FfmpegBackend(FileLogger logger)
+    public FfmpegBackend(FileLogger logger, Func<IntPtr>? hwDeviceProvider = null)
     {
         _logger = logger;
+        _hwDeviceProvider = hwDeviceProvider;
     }
 
     public Task<bool> OpenAsync(string filePath, CancellationToken ct = default)
@@ -94,8 +120,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
                 _codecCtx = FfmpegNative.avcodec_alloc_context3(decoder);
                 FfmpegNative.avcodec_parameters_to_context(_codecCtx, codecPar);
 
-                ret = FfmpegNative.avcodec_open2(_codecCtx, decoder, IntPtr.Zero);
-                if (ret < 0)
+                if (!OpenCodecWithFallback(decoder, codecPar))
                     return Fail($"avcodec_open2 failed");
 
                 // NOTE: the swscale context is created lazily in NextFrameAsync
@@ -167,6 +192,15 @@ public sealed class FfmpegBackend : IPlaybackBackend
     {
         if (!_isOpen || !IsPlaying) return null;
 
+        // Release a previously-held GPU frame. Zero-copy keeps _avFrame alive
+        // across the renderer's synchronous Present(); by the time the next
+        // frame is requested, the texture has been copied and can be recycled.
+        if (_heldHwFrame)
+        {
+            FfmpegNative.av_frame_unref(_avFrame);
+            _heldHwFrame = false;
+        }
+
         return await Task.Run(() =>
         {
             try
@@ -196,10 +230,57 @@ public sealed class FfmpegBackend : IPlaybackBackend
                     var recvRet = FfmpegNative.avcodec_receive_frame(_codecCtx, _avFrame);
                     if (recvRet < 0) continue;
 
+                    // Hardware-decoded frames arrive as AV_PIX_FMT_D3D11 (a GPU
+                    // texture; reference frames live in VRAM). Transfer to a
+                    // software frame so sws_scale can read CPU pixels. Software
+                    // decoders produce ordinary CPU frames and skip this.
+                    var srcFrame = _avFrame;
+                    var frameFormat = Marshal.ReadInt32(_avFrame, FfmpegOffsets.FrameFormat);
+                    if (frameFormat == FfmpegNative.AV_PIX_FMT_D3D11)
+                    {
+                        _decodedHw = true; // decoder is really using D3D11VA
+
+                        // Zero-copy: hand the NV12 texture straight to the renderer.
+                        // data[0] = ID3D11Texture2D*, data[1] = array slice index
+                        // (stored as an intptr_t in a pointer slot).
+                        if (PreferZeroCopy)
+                        {
+                            var texture = Marshal.ReadIntPtr(_avFrame, FfmpegOffsets.FrameData0);
+                            var index = Marshal.ReadIntPtr(_avFrame, FfmpegOffsets.FrameData1).ToInt32();
+                            var zPts = Marshal.ReadInt64(_avFrame, FfmpegOffsets.FrameBestEffortPts);
+                            var zPtsUs = zPts * _timeBase.Num * 1_000_000 / _timeBase.Den;
+                            Position = TimeSpan.FromMicroseconds(zPtsUs);
+                            _heldHwFrame = true; // keep _avFrame alive until next call
+                            return FrameData.Gpu(texture, index, _width, _height, zPtsUs);
+                        }
+
+                        if (_swFrame == IntPtr.Zero)
+                            _swFrame = FfmpegNative.av_frame_alloc();
+                        FfmpegNative.av_frame_unref(_swFrame);
+                        var tret = FfmpegNative.av_hwframe_transfer_data(_swFrame, _avFrame, 0);
+                        if (tret < 0)
+                        {
+                            _logger.Warn($"av_hwframe_transfer_data failed: 0x{tret:X8}");
+                            FfmpegNative.av_frame_unref(_avFrame);
+                            continue;
+                        }
+                        srcFrame = _swFrame;
+                        frameFormat = Marshal.ReadInt32(_swFrame, FfmpegOffsets.FrameFormat);
+                    }
+                    else if (_useHardware && !_warnedSwFallback)
+                    {
+                        // hw_device_ctx was set and open succeeded, but the decoder
+                        // handed back a software pixel format — FFmpeg's get_format
+                        // silently fell back to software. This puts reference frames
+                        // back in system RAM (hundreds of MB) and burns a CPU core,
+                        // so flag it loudly.
+                        _warnedSwFallback = true;
+                        _logger.Warn($"Hardware decode requested but decoder returned software pixel format {frameFormat} (silent fallback to SOFTWARE). Reference frames will live in system RAM.");
+                    }
+
                     // (Re)create the swscale context for the frame's actual
                     // decoded pixel format (handles 10-bit, full-range, NV12,
                     // etc., instead of assuming 8-bit YUV420P).
-                    var frameFormat = Marshal.ReadInt32(_avFrame, FfmpegOffsets.FrameFormat);
                     var frameColorRange = Marshal.ReadInt32(_avFrame, FfmpegOffsets.FrameColorRange);
                     var frameColorspace = Marshal.ReadInt32(_avFrame, FfmpegOffsets.FrameColorspace);
                     var swsColorspace = MapSwsColorspace(frameColorspace, _width, _height);
@@ -249,12 +330,12 @@ public sealed class FfmpegBackend : IPlaybackBackend
                     {
                         var srcData = stackalloc IntPtr[8];
                         var srcStride = stackalloc int[8];
-                        srcData[0] = Marshal.ReadIntPtr(_avFrame, FfmpegOffsets.FrameData0);
-                        srcData[1] = Marshal.ReadIntPtr(_avFrame, FfmpegOffsets.FrameData1);
-                        srcData[2] = Marshal.ReadIntPtr(_avFrame, FfmpegOffsets.FrameData2);
-                        srcStride[0] = Marshal.ReadInt32(_avFrame, FfmpegOffsets.FrameLinesize0);
-                        srcStride[1] = Marshal.ReadInt32(_avFrame, FfmpegOffsets.FrameLinesize1);
-                        srcStride[2] = Marshal.ReadInt32(_avFrame, FfmpegOffsets.FrameLinesize2);
+                        srcData[0] = Marshal.ReadIntPtr(srcFrame, FfmpegOffsets.FrameData0);
+                        srcData[1] = Marshal.ReadIntPtr(srcFrame, FfmpegOffsets.FrameData1);
+                        srcData[2] = Marshal.ReadIntPtr(srcFrame, FfmpegOffsets.FrameData2);
+                        srcStride[0] = Marshal.ReadInt32(srcFrame, FfmpegOffsets.FrameLinesize0);
+                        srcStride[1] = Marshal.ReadInt32(srcFrame, FfmpegOffsets.FrameLinesize1);
+                        srcStride[2] = Marshal.ReadInt32(srcFrame, FfmpegOffsets.FrameLinesize2);
 
                         var dstData = stackalloc IntPtr[8];
                         var dstStride = stackalloc int[8];
@@ -281,6 +362,49 @@ public sealed class FfmpegBackend : IPlaybackBackend
         }, ct);
     }
 
+    // Opens the codec, preferring D3D11VA hardware decode and transparently
+    // retrying software if the hardware open fails. Sets _useHardware to reflect
+    // which path is active. Returns false only if BOTH paths fail to open.
+    private bool OpenCodecWithFallback(IntPtr decoder, IntPtr codecPar)
+    {
+        var dev = (_hwDeviceProvider?.Invoke()) ?? IntPtr.Zero;
+        if (dev != IntPtr.Zero)
+        {
+            // Assign the hw device context: the codec context takes ownership
+            // of this ref (released by avcodec_free_context in Close/Reset).
+            _hwDeviceRef = dev;
+            Marshal.WriteIntPtr(_codecCtx, FfmpegOffsets.HwDeviceCtxOffset, dev);
+
+            if (FfmpegNative.avcodec_open2(_codecCtx, decoder, IntPtr.Zero) == 0)
+            {
+                _useHardware = true;
+                _logger.Info("Hardware decode enabled (D3D11VA)");
+                return true;
+            }
+
+            // Hardware open failed: release the codec ctx (which frees the hw
+            // ref it was handed) and reallocate a clean ctx for software retry.
+            _logger.Warn("Hardware avcodec_open2 failed; retrying software");
+            ResetCodecCtx();
+            _codecCtx = FfmpegNative.avcodec_alloc_context3(decoder);
+            FfmpegNative.avcodec_parameters_to_context(_codecCtx, codecPar);
+        }
+
+        _useHardware = false;
+        return FfmpegNative.avcodec_open2(_codecCtx, decoder, IntPtr.Zero) == 0;
+    }
+
+    // Frees the codec context and the transfer destination frame WITHOUT
+    // touching the demuxer/format context (used for the hw->sw retry).
+    private void ResetCodecCtx()
+    {
+        if (_swFrame != IntPtr.Zero)
+            FfmpegNative.av_frame_free(ref _swFrame);
+        if (_codecCtx != IntPtr.Zero)
+            FfmpegNative.avcodec_free_context(ref _codecCtx);
+        _hwDeviceRef = IntPtr.Zero;
+    }
+
     private void Close()
     {
         if (_swsCtx != IntPtr.Zero) { FfmpegNative.sws_freeContext(_swsCtx); _swsCtx = IntPtr.Zero; }
@@ -289,7 +413,14 @@ public sealed class FfmpegBackend : IPlaybackBackend
         _swsColorspace = -1;
         if (_avFrame != IntPtr.Zero) { FfmpegNative.av_frame_free(ref _avFrame); }
         if (_avPacket != IntPtr.Zero) { FfmpegNative.av_packet_free(ref _avPacket); }
+        if (_swFrame != IntPtr.Zero) { FfmpegNative.av_frame_free(ref _swFrame); }
+        // avcodec_free_context releases hw_device_ctx (the ref we assigned), if any.
         if (_codecCtx != IntPtr.Zero) { FfmpegNative.avcodec_free_context(ref _codecCtx); }
+        _hwDeviceRef = IntPtr.Zero;
+        _useHardware = false;
+        _decodedHw = false;
+        _warnedSwFallback = false;
+        _heldHwFrame = false;
         if (_fmtCtx != IntPtr.Zero) { FfmpegNative.avformat_close_input(ref _fmtCtx); }
         if (_bufferA != IntPtr.Zero) { FfmpegNative.av_free(_bufferA); _bufferA = IntPtr.Zero; }
         if (_bufferB != IntPtr.Zero) { FfmpegNative.av_free(_bufferB); _bufferB = IntPtr.Zero; }

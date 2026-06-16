@@ -16,6 +16,11 @@ public sealed class PlaybackManager : IDisposable
     private readonly object _lock = new();
     private bool _disposed;
 
+    // Shared GPU device for zero-copy hardware decode + render. Set by App after
+    // construction. When null/unavailable, decode+render use a per-session device
+    // and the CPU color pipeline (the proven fallback path).
+    public GpuDevice? Gpu { get; set; }
+
     public PlaybackManager(
         FileLogger logger,
         DesktopHost desktopHost,
@@ -27,7 +32,7 @@ public sealed class PlaybackManager : IDisposable
         _logger = logger;
         _desktopHost = desktopHost;
         _createSurface = createSurface ?? ((x, y, width, height) => _desktopHost.CreateForMonitor(x, y, width, height));
-        _createRenderer = createRenderer ?? ((hwnd, width, height, fileLogger) => new DxgiRenderer(hwnd, width, height, fileLogger));
+        _createRenderer = createRenderer ?? ((hwnd, width, height, fileLogger) => new DxgiRenderer(hwnd, width, height, fileLogger, Gpu));
         _createBackend = createBackend ?? CreateBackend;
         _createFallbackBackend = createFallbackBackend ?? CreateFallbackBackend;
     }
@@ -146,7 +151,12 @@ public sealed class PlaybackManager : IDisposable
         RaiseSessionsChanged();
     }
 
-    private IPlaybackBackend CreateBackend() => new FfmpegBackend(_logger);
+    private IPlaybackBackend CreateBackend() => new FfmpegBackend(_logger, AcquireHwDevice);
+
+    // Returns a D3D11VA device for the decoder: the shared GPU device when
+    // available (enables zero-copy), else a fresh per-session device.
+    private IntPtr AcquireHwDevice()
+        => Gpu is { IsAvailable: true } ? HwDecodeDevice.CreateForDevice(Gpu.DevicePointer) : HwDecodeDevice.CreateNew();
     private IPlaybackBackend CreateFallbackBackend()
     {
         _logger.Warn("FfmpegBackend failed, falling back to MfBackend");

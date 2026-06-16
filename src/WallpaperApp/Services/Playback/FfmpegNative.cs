@@ -90,6 +90,34 @@ internal static partial class FfmpegNative
     [LibraryImport(AvUtil)]
     internal static partial IntPtr av_malloc(ulong size);
 
+    // --- Hardware acceleration (libavutil/hwcontext.h) ---
+    // Resolve a hw device type by name ("d3d11va", "dxva2", ...) -> AVHWDeviceType.
+    [LibraryImport(AvUtil, StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial int av_hwdevice_find_type_by_name(string name);
+
+    [LibraryImport(AvUtil)]
+    internal static partial IntPtr av_hwdevice_ctx_alloc(int type);
+
+    // Creates a hw device context (alloc + init). On success *ctx points to an
+    // AVBufferRef* the caller owns (av_buffer_unref to release).
+    [LibraryImport(AvUtil)]
+    internal static partial int av_hwdevice_ctx_create(ref IntPtr ctx, int type, IntPtr device, IntPtr opts, int flags);
+
+    [LibraryImport(AvUtil)]
+    internal static partial int av_hwdevice_ctx_init(IntPtr ctx);
+
+    // Returns a NEW AVBufferRef* (caller owns; av_buffer_unref to release).
+    [LibraryImport(AvUtil)]
+    internal static partial IntPtr av_buffer_ref(IntPtr buf);
+
+    [LibraryImport(AvUtil)]
+    internal static partial void av_buffer_unref(ref IntPtr buf);
+
+    // Copies a hardware frame to a software frame (GPU texture -> CPU pixels).
+    // dst must be an av_frame_alloc()'d frame; its format is filled in.
+    [LibraryImport(AvUtil)]
+    internal static partial int av_hwframe_transfer_data(IntPtr dst, IntPtr src, int field);
+
     [LibraryImport(SwScale)]
     internal static partial IntPtr sws_getContext(
         int srcW, int srcH, int srcFormat,
@@ -134,6 +162,9 @@ internal static partial class FfmpegNative
     internal const int AV_CODEC_ID_NONE = 0;
     internal const int AV_PIX_FMT_BGRA = 28;
     internal const int AV_PIX_FMT_YUV420P = 0;
+    // Hardware pixel formats / device types (verified by offsetof probe for FFmpeg 7.1).
+    internal const int AV_PIX_FMT_D3D11 = 171;       // AVPixelFormat: a D3D11 GPU texture (VLD) frame
+    internal const int AV_HWDEVICE_TYPE_D3D11VA = 7; // AVHWDeviceType
     internal const int SWS_BILINEAR = 2;
 
     internal const int AVCOL_RANGE_UNSPECIFIED = 0;

@@ -1,0 +1,9 @@
+<UserControl x:Class="WallpaperApp.UI.Controls.VideoFrameView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Decoded frames are blitted into a WriteableBitmap set as the Image
+         source from code-behind. Stretch scales the full-res bitmap to fit. -->
+    <Image x:Name="FrameImage"
+           Stretch="{Binding Stretch, RelativeSource={RelativeSource AncestorType=UserControl}}"
+           RenderOptions.BitmapScalingMode="HighQuality"/>
+</UserControl>

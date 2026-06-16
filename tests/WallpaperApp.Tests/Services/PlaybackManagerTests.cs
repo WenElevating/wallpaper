@@ -107,6 +107,9 @@ public sealed class PlaybackManagerTests : IDisposable
 
         public bool IsPlaying { get; private set; }
         public bool IsPaused { get; private set; }
+        public bool IsHardwareDecoding => false;
+        public int VideoWidth => 0;
+        public int VideoHeight => 0;
         public TimeSpan Duration => TimeSpan.Zero;
         public TimeSpan Position => TimeSpan.Zero;
         public event EventHandler? EndOfStream;

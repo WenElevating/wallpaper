@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:loc="clr-namespace:WallpaperApp.Localization"
              xmlns:vm="clr-namespace:WallpaperApp.UI.ViewModels"
+             xmlns:controls="clr-namespace:WallpaperApp.UI.Controls"
              xmlns:this="clr-namespace:WallpaperApp.UI"
              Foreground="{StaticResource TextBrush}">
     <UserControl.Resources>
@@ -20,9 +21,7 @@
         <Border Grid.Column="0" CornerRadius="16" ClipToBounds="True" Background="Black"
                 BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
                 Effect="{StaticResource CardShadowEffect}" Margin="0,0,24,0">
-            <MediaElement x:Name="Player" Stretch="Uniform" IsMuted="True"
-                          LoadedBehavior="Manual" UnloadedBehavior="Stop"
-                          MediaEnded="Player_MediaEnded"/>
+            <controls:VideoFrameView x:Name="Player" Stretch="Uniform"/>
         </Border>
 
         <!-- Info panel -->

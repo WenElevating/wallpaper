@@ -7,6 +7,9 @@ public sealed class MfBackend : IPlaybackBackend
     private readonly FileLogger _logger;
     public bool IsPlaying => false;
     public bool IsPaused => false;
+    public bool IsHardwareDecoding => false;
+    public int VideoWidth => 0;
+    public int VideoHeight => 0;
     public TimeSpan Duration => TimeSpan.Zero;
     public TimeSpan Position => TimeSpan.Zero;
     public event EventHandler? EndOfStream;
