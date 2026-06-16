@@ -361,4 +361,32 @@ internal static partial class NativeMethods
     internal const byte ACLineOffline = 0;
     internal const byte ACLineOnline = 1;
     internal const byte ACLineUnknown = 255;
+
+    // ---------- Fullscreen detection ----------
+
+    // SHQueryUserNotificationState is the OS's own "is a fullscreen app
+    // active?" signal — the same one Windows uses to auto-hide the taskbar
+    // and suppress notifications. It catches cases pure geometry misses:
+    // D3D exclusive-fullscreen games (no normal window to measure), F11
+    // fullscreen, presentation mode. The struct is a 4-byte int, blittable.
+    [LibraryImport("shell32.dll")]
+    internal static partial int SHQueryUserNotificationState(out QUERY_USER_NOTIFICATION_STATE pqunsState);
+
+    internal enum QUERY_USER_NOTIFICATION_STATE
+    {
+        QUNS_NOT_PRESENT = 1,                 // machine locked / screensaver / fast-user-switch
+        QUNS_BUSY = 2,                        // a fullscreen app is running (F11 fullscreen, most games)
+        QUNS_RUNNING_D3D_FULL_SCREEN = 3,     // a Direct3D app is in exclusive fullscreen
+        QUNS_PRESENTATION_MODE = 4,           // presentation mode (projector)
+        QUNS_ACCEPTS_NOTIFICATIONS = 5,       // normal — no fullscreen
+        QUNS_QUIET_TIME = 6,                  // quiet hours — no fullscreen
+        QUNS_APP = 7,                         // a Windows Store app is running (treated as fullscreen)
+    }
+
+    // MONITOR_DEFAULTTOPRIMARY: if the window isn't on any monitor, fall back
+    // to the primary. Returns the monitor the window is mostly on.
+    [LibraryImport("user32.dll")]
+    internal static partial IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    internal const uint MONITOR_DEFAULTTOPRIMARY = 1;
 }
