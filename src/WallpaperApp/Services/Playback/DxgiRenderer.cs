@@ -302,7 +302,13 @@ public sealed class DxgiRenderer : IFrameRenderer
             Step("unbind", () => _context.OMSetRenderTargets(Array.Empty<ID3D11RenderTargetView>(), null));
 
             if (dbg) _logger.Info("zc step: present");
-            presentHr = _swapChain.Present(1, PresentFlags.None);
+            // Sync interval 0: don't block on VSync. The wallpaper isn't an
+            // interactive scene, and its window goes through DWM composition,
+            // which performs the final frame sync — so tearing can't reach the
+            // desktop. VSync (interval 1) forced the GPU to stall every frame
+            // waiting for the next 60Hz tick, which is wasted work for a 35-40fps
+            // video and a real chunk of the steady-state GPU usage.
+            presentHr = _swapChain.Present(0, PresentFlags.None);
         }
         finally { decodedTex.Dispose(); }
 
@@ -359,7 +365,8 @@ public sealed class DxgiRenderer : IFrameRenderer
         using var backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(_swapChain.CurrentBackBufferIndex);
         _context.CopySubresourceRegion(backBuffer, 0, 0, 0, 0, _stagingTexture, 0, null);
 
-        var presentHr = _swapChain.Present(1, PresentFlags.None);
+        // Sync interval 0 (no VSync stall) — see PresentGpu for rationale.
+        var presentHr = _swapChain.Present(0, PresentFlags.None);
         _presentCount++;
         if (_presentCount <= 3 || _presentCount % 300 == 0)
             _logger.Info($"DXGI Present #{_presentCount}: frame {frame.Width}x{frame.Height}, presentHr=0x{presentHr.Code:X8}");
