@@ -22,7 +22,9 @@
 
 ## 截图
 
-*(即将推出)*
+![壁纸库界面](sources/zh/index.png)
+
+![壁纸播放效果演示](sources/zh/sample.gif)
 
 ## 快速开始
 

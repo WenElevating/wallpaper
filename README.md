@@ -22,7 +22,9 @@
 
 ## Screenshots
 
-*(coming soon)*
+![Library wallpapers](sources/en/index.png)
+
+![Wallpaper playback demo](sources/en/sample.gif)
 
 ## Getting Started
 
