@@ -72,6 +72,11 @@ public sealed class DxgiRenderer : IFrameRenderer
     private int _presentCount;
     private bool _disposed;
 
+    // True when the static GPU pipeline state (viewport, topology, shaders,
+    // sampler, SRVs) needs re-binding. These never change frame-to-frame, so we
+    // only set them on init / device loss / resolution change — not every frame.
+    private bool _pipelineDirty = true;
+
     // GPU zero-copy resources.
     private bool _zcInited;
     private int _nv12W, _nv12H;
@@ -129,7 +134,7 @@ public sealed class DxgiRenderer : IFrameRenderer
     private void EnsureZeroCopyResources(ID3D11Device dev, int w, int h)
     {
         if (_vs is null) _vs = dev.CreateVertexShader(_vsBc!);
-        if (_ps is null) _ps = dev.CreatePixelShader(_psBc!);
+        if (_ps is null) _ps = dev.CreatePixelShader(_vsBc!);
         if (_sampler is null)
         {
             _sampler = dev.CreateSamplerState(new SamplerDescription
@@ -143,6 +148,9 @@ public sealed class DxgiRenderer : IFrameRenderer
             });
         }
         EnsureNv12(dev, w, h);
+        // Any of the shader/sampler/SRV bindings above may have (re)created
+        // objects, so the pipeline state must be re-bound on the next frame.
+        _pipelineDirty = true;
     }
 
     private void EnsureNv12(ID3D11Device dev, int w, int h)
@@ -175,6 +183,8 @@ public sealed class DxgiRenderer : IFrameRenderer
         });
         _nv12W = w;
         _nv12H = h;
+        // New NV12 texture + SRVs -> the bound SRVs changed, must re-bind.
+        _pipelineDirty = true;
     }
 
     public bool Present(FrameData frame)
@@ -267,13 +277,24 @@ public sealed class DxgiRenderer : IFrameRenderer
 
             var rtv = _rtvs[(int)_swapChain.CurrentBackBufferIndex];
             if (rtv is null) return false;
+            // The RTV must be re-bound every frame: flip-model swap chains flip
+            // the back-buffer index, so the active target changes each frame.
             Step("om-rtv", () => _context.OMSetRenderTargets(rtv, null));
-            Step("viewport", () => _context.RSSetViewports(new[] { new Viewport(0, 0, frame.Width, frame.Height) }));
-            Step("topology", () => _context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList));
-            Step("vs", () => _context.VSSetShader(_vs));
-            Step("ps", () => _context.PSSetShader(_ps));
-            Step("srvs", () => _context.PSSetShaderResources(0, 2, new[] { _srvLuma!, _srvChroma! }));
-            Step("samplers", () => _context.PSSetSamplers(0, 1, new[] { _sampler! }));
+
+            // The remaining pipeline state (viewport, topology, shaders, sampler,
+            // SRVs) is invariant across frames for a given resolution, so we only
+            // re-bind it when something invalidated it (init / device loss /
+            // resolution change). This cuts redundant state-set calls per frame.
+            if (_pipelineDirty)
+            {
+                Step("viewport", () => _context.RSSetViewports(new[] { new Viewport(0, 0, frame.Width, frame.Height) }));
+                Step("topology", () => _context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList));
+                Step("vs", () => _context.VSSetShader(_vs));
+                Step("ps", () => _context.PSSetShader(_ps));
+                Step("srvs", () => _context.PSSetShaderResources(0, 2, new[] { _srvLuma!, _srvChroma! }));
+                Step("samplers", () => _context.PSSetSamplers(0, 1, new[] { _sampler! }));
+                _pipelineDirty = false;
+            }
             Step("draw", () => _context.Draw(3, 0));
 
             // Flip-model swap chains require the back buffer to be UNBOUND from
@@ -469,6 +490,8 @@ public sealed class DxgiRenderer : IFrameRenderer
         CreateStagingTexture(frameWidth, frameHeight);
         _frameWidth = frameWidth;
         _frameHeight = frameHeight;
+        // Resolution changed -> viewport and back-buffer RTVs changed.
+        _pipelineDirty = true;
         return true;
     }
 
@@ -513,6 +536,9 @@ public sealed class DxgiRenderer : IFrameRenderer
         _dxgiFactory?.Dispose(); _dxgiFactory = null;
         _frameWidth = 0;
         _frameHeight = 0;
+        // Everything is torn down; the next Present must re-bind the whole
+        // pipeline from scratch once resources are recreated.
+        _pipelineDirty = true;
     }
 
     // Registers a manual-reset event with DXGI; the OS signals it whenever the
