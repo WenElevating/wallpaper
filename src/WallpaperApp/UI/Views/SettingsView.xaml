@@ -63,6 +63,24 @@
                               IsChecked="{Binding IsPauseOnRemoteSession, Mode=TwoWay}"/>
                 </Grid>
             </Border>
+
+            <Border Background="{StaticResource CardSurfaceBrush}"
+                    BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                    CornerRadius="10" Padding="16,13" Margin="0,12,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="{loc:Loc HotkeyTogglePauseLabel}" FontSize="14"/>
+                        <TextBlock Text="{Binding Settings.Hotkeys.TogglePause.DisplayString}"
+                                   Foreground="{StaticResource MutedTextBrush}" FontSize="12" Margin="0,2,0,0"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" x:Name="ResetHotkeyButton" Content="{loc:Loc HotkeyResetButton}"
+                            Padding="12,4" Click="ResetHotkeyButton_Click"/>
+                </Grid>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

@@ -172,6 +172,12 @@
   <data name="PauseOnRemoteSessionLabel" xml:space="preserve">
     <value>在远程桌面 / 投屏会话期间暂停</value>
   </data>
+  <data name="HotkeyTogglePauseLabel" xml:space="preserve">
+    <value>暂停 / 恢复 热键</value>
+  </data>
+  <data name="HotkeyResetButton" xml:space="preserve">
+    <value>重置</value>
+  </data>
   <data name="MsgSetSuccessDesktop" xml:space="preserve">
     <value>壁纸已设置到桌面</value>
   </data>

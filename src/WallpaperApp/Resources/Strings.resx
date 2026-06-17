@@ -172,6 +172,12 @@
   <data name="PauseOnRemoteSessionLabel" xml:space="preserve">
     <value>Pause during remote desktop / screen cast sessions</value>
   </data>
+  <data name="HotkeyTogglePauseLabel" xml:space="preserve">
+    <value>Pause / Resume hotkey</value>
+  </data>
+  <data name="HotkeyResetButton" xml:space="preserve">
+    <value>Reset</value>
+  </data>
   <data name="MsgSetSuccessDesktop" xml:space="preserve">
     <value>Wallpaper set to desktop</value>
   </data>
