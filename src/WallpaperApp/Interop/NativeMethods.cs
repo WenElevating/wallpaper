@@ -546,4 +546,21 @@ internal static partial class NativeMethods
     internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_WIRED = 12;
     internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_VIRTUAL = 14;
     internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_USB_TUNNELING = 15;
+
+    // ---- Global hotkeys (F3) ----
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool UnregisterHotKey(IntPtr hWnd, int id);
+
+    internal const uint MOD_ALT = 0x0001;
+    internal const uint MOD_CONTROL = 0x0002;
+    internal const uint MOD_SHIFT = 0x0004;
+    internal const uint MOD_WIN = 0x0008;
+    internal const uint MOD_NOREPEAT = 0x4000; // 按住不重复触发
+
+    internal const int WM_HOTKEY = 0x0312;
 }

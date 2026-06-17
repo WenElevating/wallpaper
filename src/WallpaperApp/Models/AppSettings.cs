@@ -15,6 +15,8 @@ public record AppSettings
     public bool HardwareAccelerationEnabled { get; init; } = true;
     public string LogVerbosity { get; init; } = "Info";
     public string Theme { get; init; } = "Dark";
+    /// <summary>Global hotkey bindings. Empty slots are unbound.</summary>
+    public HotkeyBindings Hotkeys { get; init; } = new();
     /// <summary>UI language code ("zh-CN", "en"); empty = follow the OS UI language.</summary>
     public string Language { get; init; } = "";
 }
