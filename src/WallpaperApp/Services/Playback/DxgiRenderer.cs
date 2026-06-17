@@ -84,21 +84,12 @@ public sealed class DxgiRenderer : IFrameRenderer
     // after a device loss (sleep/resume, monitor change) without recompiling.
     private byte[]? _vsBc;
     private byte[]? _psBc;
+    private ID3D11Texture2D? _nv12Tex;
+    private ID3D11ShaderResourceView? _srvLuma;
+    private ID3D11ShaderResourceView? _srvChroma;
     private ID3D11VertexShader? _vs;
     private ID3D11PixelShader? _ps;
     private ID3D11SamplerState? _sampler;
-
-    // SRV cache for the D3D11VA decoded texture array. Instead of copying each
-    // decoded frame into an intermediate NV12 texture (a full-frame GPU copy
-    // every frame), we create SRVs that view a SINGLE slice of the decoded
-    // texture array directly and let the shader sample it.
-    //
-    // Keyed by the decoded texture's native pointer (FFmpeg's D3D11VA pool
-    // reuses one texture-array object, so this is stable per pool; a new pool
-    // after seek/resize yields a different pointer and the cache rebuilds).
-    // Value: per-slice SRV pairs (luma, chroma), indexed by slice number.
-    private readonly Dictionary<IntPtr, (ID3D11ShaderResourceView luma, ID3D11ShaderResourceView chroma)[]> _decodedSrvCache = new();
-    private IntPtr _lastDecodedTexture;
 
     public DxgiRenderer(IntPtr hwnd, int width, int height, FileLogger logger, GpuDevice? gpu = null)
     {
@@ -137,8 +128,9 @@ public sealed class DxgiRenderer : IFrameRenderer
         }
     }
 
-    // (Re)creates the zero-copy pipeline resources on the given device. Cheap
-    // after a device loss because the compiled shader bytecode is cached.
+    // (Re)creates the zero-copy resources on the given device. Cheap after a
+    // device loss because the compiled shader bytecode is cached. The shaders /
+    // sampler are device-independent; the NV12 texture tracks the frame size.
     private void EnsureZeroCopyResources(ID3D11Device dev, int w, int h)
     {
         if (_vs is null) _vs = dev.CreateVertexShader(_vsBc!);
@@ -155,85 +147,44 @@ public sealed class DxgiRenderer : IFrameRenderer
                 MaxLOD = float.MaxValue,
             });
         }
-        // Shader/sampler (re)created -> the pipeline state must be re-bound.
+        EnsureNv12(dev, w, h);
+        // Any of the shader/sampler/SRV bindings above may have (re)created
+        // objects, so the pipeline state must be re-bound on the next frame.
         _pipelineDirty = true;
     }
 
-    // Returns the luma/chroma SRVs for a specific slice of the decoded D3D11VA
-    // texture array, building+caching them on first sight of the texture. The
-    // decoded texture is an NV12 texture array (ArraySize > 1); we view a single
-    // slice with a Texture2DArray SRV (FirstArraySlice=slice, ArraySize=1),
-    // which is how the shader samples the decoded frame with NO per-frame copy.
-    private (ID3D11ShaderResourceView luma, ID3D11ShaderResourceView chroma) GetDecodedSliceSrv(ID3D11Texture2D decodedTex, int slice)
+    private void EnsureNv12(ID3D11Device dev, int w, int h)
     {
-        var ptr = Marshal.GetIUnknownForObject(decodedTex);
-        try
+        if (_nv12Tex is not null && _nv12W == w && _nv12H == h) return;
+        ReleaseZeroCopyTextures();
+        var desc = new Texture2DDescription
         {
-            // New texture pool (seek/resize/file change) -> drop old cache.
-            if (ptr != _lastDecodedTexture)
-            {
-                ClearDecodedSrvCache();
-                _lastDecodedTexture = ptr;
-            }
-
-            if (!_decodedSrvCache.TryGetValue(ptr, out var srvs))
-            {
-                srvs = BuildDecodedSrvCache(_device!, decodedTex);
-                _decodedSrvCache[ptr] = srvs;
-            }
-            return (srvs[slice].luma, srvs[slice].chroma);
-        }
-        finally
+            Width = w,
+            Height = h,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = DxgiFormat.NV12,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Default,
+            BindFlags = BindFlags.ShaderResource,
+        };
+        _nv12Tex = dev.CreateTexture2D(desc);
+        _srvLuma = dev.CreateShaderResourceView(_nv12Tex, new ShaderResourceViewDescription
         {
-            Marshal.Release(ptr);
-        }
-    }
-
-    // Pre-builds a per-slice SRV pair array over the whole decoded texture
-    // array (one luma R8_UNorm + one chroma R8G8_UNorm per slice). NV12 is
-    // planar: the luma SRV views plane 0 as R8, the chroma SRV views plane 1
-    // (half-height) as R8G8 — identical to how the old intermediate _nv12Tex
-    // was viewed, but applied directly to each array slice.
-    private static (ID3D11ShaderResourceView luma, ID3D11ShaderResourceView chroma)[] BuildDecodedSrvCache(ID3D11Device dev, ID3D11Texture2D decodedTex)
-    {
-        var desc = decodedTex.Description;
-        var srvs = new (ID3D11ShaderResourceView, ID3D11ShaderResourceView)[desc.ArraySize];
-        for (var s = 0; s < desc.ArraySize; s++)
+            Format = DxgiFormat.R8_UNorm,
+            ViewDimension = ShaderResourceViewDimension.Texture2D,
+            Texture2D = new Texture2DShaderResourceView { MostDetailedMip = 0, MipLevels = 1 },
+        });
+        _srvChroma = dev.CreateShaderResourceView(_nv12Tex, new ShaderResourceViewDescription
         {
-            var luma = dev.CreateShaderResourceView(decodedTex, new ShaderResourceViewDescription
-            {
-                Format = DxgiFormat.R8_UNorm,
-                ViewDimension = ShaderResourceViewDimension.Texture2DArray,
-                Texture2DArray = new Texture2DArrayShaderResourceView
-                {
-                    MostDetailedMip = 0,
-                    MipLevels = 1,
-                    FirstArraySlice = s,
-                    ArraySize = 1,
-                },
-            });
-            var chroma = dev.CreateShaderResourceView(decodedTex, new ShaderResourceViewDescription
-            {
-                Format = DxgiFormat.R8G8_UNorm,
-                ViewDimension = ShaderResourceViewDimension.Texture2DArray,
-                Texture2DArray = new Texture2DArrayShaderResourceView
-                {
-                    MostDetailedMip = 0,
-                    MipLevels = 1,
-                    FirstArraySlice = s,
-                    ArraySize = 1,
-                },
-            });
-            srvs[s] = (luma, chroma);
-        }
-        return srvs;
-    }
-
-    private void ClearDecodedSrvCache()
-    {
-        foreach (var srvs in _decodedSrvCache.Values)
-            foreach (var (luma, chroma) in srvs) { luma.Dispose(); chroma.Dispose(); }
-        _decodedSrvCache.Clear();
+            Format = DxgiFormat.R8G8_UNorm,
+            ViewDimension = ShaderResourceViewDimension.Texture2D,
+            Texture2D = new Texture2DShaderResourceView { MostDetailedMip = 0, MipLevels = 1 },
+        });
+        _nv12W = w;
+        _nv12H = h;
+        // New NV12 texture + SRVs -> the bound SRVs changed, must re-bind.
+        _pipelineDirty = true;
     }
 
     public bool Present(FrameData frame)
@@ -277,7 +228,7 @@ public sealed class DxgiRenderer : IFrameRenderer
     private bool PresentGpu(FrameData frame)
     {
         var dbg = _presentCount < 3;
-        if (dbg) _logger.Info($"zc enter: swapchain={_swapChain is not null} dev={_device is not null} zcInited={_zcInited} vs={_vs is not null} nv12dims={_nv12W}x{_nv12H}/{frame.Width}x{frame.Height}");
+        if (dbg) _logger.Info($"zc enter: swapchain={_swapChain is not null} dev={_device is not null} zcInited={_zcInited} vs={_vs is not null} nv12={_nv12Tex is not null} nv12dims={_nv12W}x{_nv12H}/{frame.Width}x{frame.Height}");
 
         if (_swapChain is null && !EnsureResources(frame.Width, frame.Height))
             return false;
@@ -288,40 +239,41 @@ public sealed class DxgiRenderer : IFrameRenderer
 
         void Step(string name, Action a) { if (dbg) _logger.Info($"zc step: {name}"); a(); }
 
-        // AddRef the decoded texture so the slice stays alive through Draw; the
-        // finally below releases this ref. (FFmpeg's _heldHwFrame also pins the
-        // slice until the next NextFrameAsync, but this is the renderer's own
-        // guarantee independent of that timing.)
+        // The pre-"copy" calls (render targets + borrowing the decoded texture)
+        // are the ones we couldn't see before. Wrap them so the next run shows
+        // exactly which throws.
         ID3D11Texture2D decodedTex;
         try
         {
             Step("ensure-rtv", () => EnsureRtv());
+            // AddRef the decoded texture so it stays alive during Present.
+            // FromPointer wraps the pointer for Dispose(); the finally block's
+            // decodedTex.Dispose() releases the ref, balancing our AddRef.
             Marshal.AddRef(frame.Texture);
             decodedTex = MarshallingHelpers.FromPointer<ID3D11Texture2D>(frame.Texture);
         }
         catch (Exception ex)
         {
-            _logger.Warn($"zc pre-step threw: {ex.Message}");
+            _logger.Warn($"zc pre-copy threw: {ex.Message}");
             throw;
         }
 
         if (_device is null || _context is null || _swapChain is null) return false;
 
-        // Re-create the zero-copy pipeline (shaders/sampler) if released after a
-        // device loss. Bytecode is cached, so this is cheap.
+        // Re-create the zero-copy resources if they were released after a device
+        // loss (shaders/sampler/NV12). Bytecode is cached, so this is cheap.
         if (_vs is null && _zcInited)
             EnsureZeroCopyResources(_device, frame.Width, frame.Height);
 
-        _nv12W = frame.Width;
-        _nv12H = frame.Height;
+        if (_nv12W != frame.Width || _nv12H != frame.Height)
+            EnsureNv12(_device, frame.Width, frame.Height);
 
         Result presentHr = default;
         try
         {
-            // Get the SRVs that view THIS frame's slice of the decoded texture
-            // array directly — no intermediate copy. (SRVs are cached per texture
-            // + slice, so this is a dictionary lookup, not a per-frame create.)
-            var (srvLuma, srvChroma) = GetDecodedSliceSrv(decodedTex, frame.TextureIndex);
+            // CopySubresourceRegion on video textures indexes the array slice and
+            // copies the entire planar surface (both planes) in one call.
+            Step("copy", () => _context.CopySubresourceRegion(_nv12Tex!, 0, 0, 0, 0, decodedTex, frame.TextureIndex, null));
 
             var rtv = _rtvs[(int)_swapChain.CurrentBackBufferIndex];
             if (rtv is null) return false;
@@ -329,21 +281,20 @@ public sealed class DxgiRenderer : IFrameRenderer
             // the back-buffer index, so the active target changes each frame.
             Step("om-rtv", () => _context.OMSetRenderTargets(rtv, null));
 
-            // The static pipeline state (viewport, topology, shaders, sampler) is
-            // invariant across frames for a given resolution, so re-bind only on
-            // init / device loss / resolution change. SRVs are NOT cached here —
-            // the decoded slice changes every frame, so they're bound below.
+            // The remaining pipeline state (viewport, topology, shaders, sampler,
+            // SRVs) is invariant across frames for a given resolution, so we only
+            // re-bind it when something invalidated it (init / device loss /
+            // resolution change). This cuts redundant state-set calls per frame.
             if (_pipelineDirty)
             {
                 Step("viewport", () => _context.RSSetViewports(new[] { new Viewport(0, 0, frame.Width, frame.Height) }));
                 Step("topology", () => _context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList));
                 Step("vs", () => _context.VSSetShader(_vs));
                 Step("ps", () => _context.PSSetShader(_ps));
+                Step("srvs", () => _context.PSSetShaderResources(0, 2, new[] { _srvLuma!, _srvChroma! }));
                 Step("samplers", () => _context.PSSetSamplers(0, 1, new[] { _sampler! }));
                 _pipelineDirty = false;
             }
-            // SRVs point at the decoded frame's slice; re-bind every frame.
-            Step("srvs", () => _context.PSSetShaderResources(0, 2, new[] { srvLuma, srvChroma }));
             Step("draw", () => _context.Draw(3, 0));
 
             // Flip-model swap chains require the back buffer to be UNBOUND from
@@ -558,10 +509,9 @@ public sealed class DxgiRenderer : IFrameRenderer
 
     private void ReleaseZeroCopyTextures()
     {
-        // The decoded-slice SRV cache is the only per-decode texture state now
-        // (the old intermediate _nv12Tex is gone — slices are sampled directly).
-        ClearDecodedSrvCache();
-        _lastDecodedTexture = IntPtr.Zero;
+        _srvLuma?.Dispose(); _srvLuma = null;
+        _srvChroma?.Dispose(); _srvChroma = null;
+        _nv12Tex?.Dispose(); _nv12Tex = null;
     }
 
     private void ReleaseZeroCopy()
