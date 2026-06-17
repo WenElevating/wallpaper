@@ -33,7 +33,20 @@ public class AppDbContextTests : IDisposable
         await context.MigrateAsync();
         var version = await context.SchemaVersions.FirstOrDefaultAsync();
         Assert.NotNull(version);
-        Assert.Equal(1, version.Version);
+        // v2 = 播放列表表(Playlist/PlaylistMember/MonitorPlaylistAssignment)
+        Assert.Equal(2, version.Version);
+    }
+
+    [Fact]
+    public async Task Migrate_CreatesPlaylistTables_OnFreshDatabase()
+    {
+        await using var context = CreateContext();
+        await context.MigrateAsync();
+
+        // 播放列表三张表应可查询(空结果,不抛异常即证明表存在)
+        Assert.Empty(await context.Playlists.ToListAsync());
+        Assert.Empty(await context.PlaylistMembers.ToListAsync());
+        Assert.Empty(await context.MonitorPlaylistAssignments.ToListAsync());
     }
 
     [Fact]

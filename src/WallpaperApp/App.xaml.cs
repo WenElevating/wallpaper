@@ -10,6 +10,7 @@ using WallpaperApp.Services.Logging;
 using WallpaperApp.Services.Monitor;
 using WallpaperApp.Services.Input;
 using WallpaperApp.Services.Playback;
+using WallpaperApp.Services.Playlists;
 using WallpaperApp.Services.Settings;
 using WallpaperApp.UI;
 using WallpaperApp.UI.Controls;
@@ -23,6 +24,7 @@ public partial class App : Application
     private TrayIcon? _trayIcon;
     private PowerAwareController? _powerAware;
     private RemoteSessionDetector? _remoteSession;
+    private PlaylistCoordinator? _playlists;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -103,6 +105,15 @@ public partial class App : Application
             desktopHost.Attach();
             logger.Info($"DesktopHost attached: {desktopHost.IsAttached}");
 
+            // F1: build the playlist coordinator. Its switcher needs the live
+            // MainViewModel (to resolve monitor + wallpaper by id), creating a
+            // construction cycle, so it's built here and attached back to the VM.
+            var playlistService = _serviceProvider.GetRequiredService<PlaylistService>();
+            _playlists = new PlaylistCoordinator(logger, playlistService,
+                (monitorKey, wallpaperId) => viewModel.SwitchViaPlaylistAsync(monitorKey, wallpaperId));
+            viewModel.AttachPlaylistCoordinator(_playlists);
+            await _playlists.StartAllAsync();
+
             // Wire the fullscreen detector (registered but previously never
             // started) to pause wallpapers while a fullscreen app is in the
             // foreground, and the power controller to pause on battery. Both
@@ -181,6 +192,16 @@ public partial class App : Application
         services.AddSingleton<LibraryService>();
         services.AddSingleton<ThumbnailService>();
         services.AddSingleton<GifTranscoder>();
+        // F1: PlaylistService holds a single AppDbContext for its lifetime. It's a
+        // singleton; AppDbContext is normally Transient per-request, but here we
+        // resolve one context that the service owns for its whole life (matches how
+        // the service is consumed — one long-lived instance driving rotation).
+        services.AddSingleton<PlaylistService>(sp =>
+        {
+            var logger = sp.GetRequiredService<FileLogger>();
+            var db = sp.GetRequiredService<AppDbContext>();
+            return new PlaylistService(logger, db);
+        });
         // PlaybackManager constructs D2dRenderer per-session using WallpaperWindow HWND
         services.AddSingleton<PlaybackManager>();
         services.AddSingleton<DesktopHost>();
@@ -216,6 +237,7 @@ public partial class App : Application
 
             _powerAware?.Dispose();
             _remoteSession?.Dispose();
+            _playlists?.StopAll();
 
             var hotkeys = _serviceProvider.GetService<GlobalHotkeyService>();
             hotkeys?.Dispose();

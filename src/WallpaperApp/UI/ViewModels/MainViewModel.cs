@@ -13,13 +13,14 @@ using WallpaperApp.Services.Logging;
 using WallpaperApp.Services.Monitor;
 using WallpaperApp.Services.Input;
 using WallpaperApp.Services.Playback;
+using WallpaperApp.Services.Playlists;
 using WallpaperApp.Services.Settings;
 using WallpaperApp.UI;
 using WallpaperApp.UI.Views;
 
 namespace WallpaperApp.UI.ViewModels;
 
-public enum ShellView { Library, Detail, Settings }
+public enum ShellView { Library, Detail, Settings, Playlist }
 public enum LibrarySort { Recent, Name, Size }
 
 public sealed class MainViewModel : INotifyPropertyChanged
@@ -30,6 +31,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly SettingsService _settings;
     private readonly FileLogger _logger;
     private readonly GlobalHotkeyService _hotkeys;
+    private readonly PlaylistService _playlistService;
+    // Coordinator is attached after construction (its switcher needs this ViewModel
+    // instance, creating a cycle; App.xaml.cs calls AttachPlaylistCoordinator).
+    private PlaylistCoordinator? _playlists;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -42,9 +47,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand OpenDetailCommand { get; }
     public ICommand GoBackCommand { get; }
     public ICommand GoSettingsCommand { get; }
+    public ICommand GoPlaylistCommand { get; }
     public ICommand SetAsWallpaperCommand { get; }
     public ICommand ImportCommand { get; }
     public ICommand PauseToggleCommand { get; }
+    public ICommand CreatePlaylistCommand { get; }
 
     private ShellView _currentView = ShellView.Library;
     public ShellView CurrentView
@@ -59,6 +66,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 OnPropertyChanged(nameof(IsLibrary));
                 OnPropertyChanged(nameof(IsDetail));
                 OnPropertyChanged(nameof(IsSettings));
+                OnPropertyChanged(nameof(IsPlaylist));
                 OnPropertyChanged(nameof(HeaderTitle));
                 CommandManager.InvalidateRequerySuggested();
             }
@@ -67,11 +75,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsLibrary => CurrentView == ShellView.Library;
     public bool IsDetail => CurrentView == ShellView.Detail;
     public bool IsSettings => CurrentView == ShellView.Settings;
+    public bool IsPlaylist => CurrentView == ShellView.Playlist;
 
     public string HeaderTitle => CurrentView switch
     {
         ShellView.Detail => ActiveWallpaper?.DisplayName ?? "",
         ShellView.Settings => Strings.SettingsLabel,
+        ShellView.Playlist => Strings.PlaylistLabel,
         _ => Strings.LibraryLabel,
     };
 
@@ -150,7 +160,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         MonitorManager monitors,
         SettingsService settings,
         FileLogger logger,
-        GlobalHotkeyService hotkeys)
+        GlobalHotkeyService hotkeys,
+        PlaylistService playlistService)
     {
         _library = library;
         _playback = playback;
@@ -158,6 +169,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _settings = settings;
         _logger = logger;
         _hotkeys = hotkeys;
+        _playlistService = playlistService;
 
         WallpapersView = CollectionViewSource.GetDefaultView(Wallpapers);
         WallpapersView.Filter = FilterWallpaper;
@@ -174,9 +186,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         });
         GoBackCommand = new RelayCommand(_ => { ActiveWallpaper = null; CurrentView = ShellView.Library; });
         GoSettingsCommand = new RelayCommand(_ => CurrentView = ShellView.Settings);
+        GoPlaylistCommand = new RelayCommand(_ => CurrentView = ShellView.Playlist);
         ImportCommand = new RelayCommand(_ => _ = ImportAsync());
         PauseToggleCommand = new RelayCommand(_ => _ = TogglePauseAsync());
         SetAsWallpaperCommand = new RelayCommand(_ => _ = SetAsWallpaperAsync(), _ => ActiveWallpaper != null);
+        CreatePlaylistCommand = new RelayCommand(_ => _ = CreatePlaylistAsync());
     }
 
     private bool FilterWallpaper(object obj)
@@ -231,6 +245,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _hotkeys.Apply(bindings);
         try { await _settings.SaveAsync(Settings); }
         catch (Exception ex) { _logger.Warn($"Failed to save hotkey settings: {ex.Message}"); }
+    }
+
+    // F1: Coordinator's switcher needs this ViewModel instance (to resolve monitor +
+    // wallpaper), creating a construction cycle. App.xaml.cs builds the coordinator
+    // after the ViewModel and calls this to close the loop.
+    public void AttachPlaylistCoordinator(PlaylistCoordinator coordinator)
+    {
+        _playlists = coordinator;
+    }
+
+    // Switch wallpaper via playlist rotation. Resolves the monitor by key and the
+    // wallpaper by id, then reuses the existing AssignWallpaperAsync path so the
+    // switch goes through the normal PlaybackManager.SetWallpaperAsync flow.
+    public async Task<bool> SwitchViaPlaylistAsync(string monitorKey, Guid wallpaperId)
+    {
+        var monitor = Monitors.FirstOrDefault(m => m.MonitorKey == monitorKey);
+        if (monitor == null) return false;
+        var wallpaper = Wallpapers.FirstOrDefault(w => w.Id == wallpaperId);
+        if (wallpaper == null) return false;
+        return await AssignWallpaperAsync(monitor, wallpaper);
+    }
+
+    private async Task CreatePlaylistAsync()
+    {
+        var name = $"Playlist {DateTime.Now:HHmmss}";
+        var id = await _playlistService.CreateAsync(name);
+        _logger.Info($"Created playlist {name} ({id})");
+        ShowToast(Strings.MsgPlaylistCreated, error: false);
     }
 
     public async Task ImportFilesAsync(IEnumerable<string> filePaths, CancellationToken ct = default)
