@@ -66,6 +66,9 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<Playlist>(e =>
         {
             e.HasKey(x => x.Id);
+            // Guid 主键由 C# 端生成(Guid.NewGuid);显式声明非数据库生成,
+            // 否则 EF Core 在 SQLite 上会把它当 identity,带值时误发 UPDATE。
+            e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.Name).IsRequired().HasMaxLength(200);
             e.HasMany(x => x.Members).WithOne(m => m.Playlist!)
                 .HasForeignKey(m => m.PlaylistId)
@@ -75,6 +78,7 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<PlaylistMember>(e =>
         {
             e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
             e.HasIndex(x => new { x.PlaylistId, x.Order }).IsUnique();
         });
 
