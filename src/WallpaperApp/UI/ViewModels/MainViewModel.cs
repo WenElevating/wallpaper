@@ -40,6 +40,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public ObservableCollection<WallpaperItem> Wallpapers { get; } = new();
     public ObservableCollection<MonitorInfo> Monitors { get; } = new();
+    public ObservableCollection<Playlist> Playlists { get; } = new();
+    public ObservableCollection<PlaylistMemberRow> PlaylistMembers { get; } = new();
+    public ObservableCollection<WallpaperItem> AddableWallpapers { get; } = new();
 
     // Filtered + sorted view the grid binds to (search/sort drive this).
     public ICollectionView WallpapersView { get; }
@@ -52,6 +55,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand ImportCommand { get; }
     public ICommand PauseToggleCommand { get; }
     public ICommand CreatePlaylistCommand { get; }
+    public ICommand AddToPlaylistCommand { get; }
+    public ICommand RemoveFromPlaylistCommand { get; }
+    public ICommand DeletePlaylistCommand { get; }
+    public ICommand SavePlaylistSettingsCommand { get; }
+    public ICommand MovePlaylistMemberUpCommand { get; }
+    public ICommand MovePlaylistMemberDownCommand { get; }
+    public ICommand AssignPlaylistMonitorCommand { get; }
 
     private ShellView _currentView = ShellView.Library;
     public ShellView CurrentView
@@ -76,6 +86,71 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public bool IsDetail => CurrentView == ShellView.Detail;
     public bool IsSettings => CurrentView == ShellView.Settings;
     public bool IsPlaylist => CurrentView == ShellView.Playlist;
+
+    private Playlist? _selectedPlaylist;
+    public Playlist? SelectedPlaylist
+    {
+        get => _selectedPlaylist;
+        set
+        {
+            if (_selectedPlaylist == value) return;
+            _selectedPlaylist = value;
+            OnPropertyChanged();
+            CommandManager.InvalidateRequerySuggested();
+            _ = RefreshSelectedPlaylistAsync();
+        }
+    }
+
+    private string _playlistName = "";
+    public string PlaylistName
+    {
+        get => _playlistName;
+        set
+        {
+            if (_playlistName == value) return;
+            _playlistName = value;
+            OnPropertyChanged();
+            CommandManager.InvalidateRequerySuggested();
+        }
+    }
+
+    private int _playlistIntervalMinutes = 10;
+    public int PlaylistIntervalMinutes
+    {
+        get => _playlistIntervalMinutes;
+        set
+        {
+            var normalized = Math.Max(1, value);
+            if (_playlistIntervalMinutes == normalized) return;
+            _playlistIntervalMinutes = normalized;
+            OnPropertyChanged();
+        }
+    }
+
+    private bool _playlistShuffle;
+    public bool PlaylistShuffle
+    {
+        get => _playlistShuffle;
+        set
+        {
+            if (_playlistShuffle == value) return;
+            _playlistShuffle = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private string? _selectedPlaylistMonitorKey;
+    public string? SelectedPlaylistMonitorKey
+    {
+        get => _selectedPlaylistMonitorKey;
+        set
+        {
+            if (_selectedPlaylistMonitorKey == value) return;
+            _selectedPlaylistMonitorKey = value;
+            OnPropertyChanged();
+            CommandManager.InvalidateRequerySuggested();
+        }
+    }
 
     public string HeaderTitle => CurrentView switch
     {
@@ -191,6 +266,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         PauseToggleCommand = new RelayCommand(_ => _ = TogglePauseAsync());
         SetAsWallpaperCommand = new RelayCommand(_ => _ = SetAsWallpaperAsync(), _ => ActiveWallpaper != null);
         CreatePlaylistCommand = new RelayCommand(_ => _ = CreatePlaylistAsync());
+        AddToPlaylistCommand = new RelayCommand(async p => await AddToPlaylistAsync(p), _ => _selectedPlaylist != null);
+        RemoveFromPlaylistCommand = new RelayCommand(async p => await RemoveFromPlaylistAsync(p), _ => _selectedPlaylist != null);
+        DeletePlaylistCommand = new RelayCommand(async _ => await DeleteSelectedPlaylistAsync(), _ => _selectedPlaylist != null);
+        SavePlaylistSettingsCommand = new RelayCommand(async _ => await SavePlaylistSettingsAsync(), _ => _selectedPlaylist != null && !string.IsNullOrWhiteSpace(PlaylistName));
+        MovePlaylistMemberUpCommand = new RelayCommand(async p => await MovePlaylistMemberAsync(p, -1), p => CanMovePlaylistMember(p, -1));
+        MovePlaylistMemberDownCommand = new RelayCommand(async p => await MovePlaylistMemberAsync(p, 1), p => CanMovePlaylistMember(p, 1));
+        AssignPlaylistMonitorCommand = new RelayCommand(async _ => await AssignPlaylistMonitorAsync(), _ => _selectedPlaylist != null);
     }
 
     private bool FilterWallpaper(object obj)
@@ -224,6 +306,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         Wallpapers.Clear();
         foreach (var item in items)
             Wallpapers.Add(item);
+        await LoadPlaylistsAsync(ct);
 
         // F3: 注入热键回调并应用当前绑定。TogglePause 复用现有的暂停切换逻辑;
         // SkipNext/SkipPrevious/ToggleMute 槽位本期默认 None(未绑定),F1(播放列表)
@@ -236,6 +319,175 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _hotkeys.Apply(Settings.Hotkeys);
 
         _logger.Debug($"Loaded {Wallpapers.Count} wallpapers, {Monitors.Count} monitors");
+    }
+
+    public async Task LoadPlaylistsAsync(CancellationToken ct = default)
+    {
+        var playlists = await _playlistService.GetAllAsync(ct);
+        Playlists.Clear();
+        foreach (var playlist in playlists)
+            Playlists.Add(playlist);
+        var selectedId = _selectedPlaylist?.Id;
+        _selectedPlaylist = selectedId == null
+            ? Playlists.FirstOrDefault()
+            : Playlists.FirstOrDefault(p => p.Id == selectedId) ?? Playlists.FirstOrDefault();
+        OnPropertyChanged(nameof(SelectedPlaylist));
+        CommandManager.InvalidateRequerySuggested();
+        await RefreshSelectedPlaylistAsync(ct);
+    }
+
+    private async Task RefreshSelectedPlaylistAsync(CancellationToken ct = default)
+    {
+        PlaylistMembers.Clear();
+        AddableWallpapers.Clear();
+        if (_selectedPlaylist == null)
+        {
+            SetPlaylistEditorFields(null, null);
+            return;
+        }
+
+        var playlist = await _playlistService.GetByIdAsync(_selectedPlaylist.Id, ct);
+        if (playlist == null)
+        {
+            _selectedPlaylist = null;
+            OnPropertyChanged(nameof(SelectedPlaylist));
+            SetPlaylistEditorFields(null, null);
+            return;
+        }
+
+        _selectedPlaylist = playlist;
+        OnPropertyChanged(nameof(SelectedPlaylist));
+        var monitorKey = await _playlistService.GetMonitorKeyForPlaylistAsync(playlist.Id, ct);
+        SetPlaylistEditorFields(playlist, monitorKey);
+
+        var memberIds = playlist.Members.Select(m => m.WallpaperId).ToHashSet();
+        foreach (var member in playlist.Members)
+        {
+            var wallpaper = Wallpapers.FirstOrDefault(w => w.Id == member.WallpaperId);
+            PlaylistMembers.Add(new PlaylistMemberRow(
+                member,
+                wallpaper?.DisplayName ?? member.WallpaperId.ToString("N")[..8]));
+        }
+        foreach (var item in Wallpapers.Where(w => !memberIds.Contains(w.Id)))
+            AddableWallpapers.Add(item);
+    }
+
+    private void SetPlaylistEditorFields(Playlist? playlist, string? monitorKey)
+    {
+        PlaylistName = playlist?.Name ?? "";
+        PlaylistIntervalMinutes = playlist?.IntervalMinutes ?? 10;
+        PlaylistShuffle = playlist?.Shuffle ?? false;
+        SelectedPlaylistMonitorKey = monitorKey;
+    }
+
+    private async Task ReloadPlaylistsKeepingSelectionAsync(Guid? preferredPlaylistId = null, CancellationToken ct = default)
+    {
+        var selectedId = preferredPlaylistId ?? _selectedPlaylist?.Id;
+        var playlists = await _playlistService.GetAllAsync(ct);
+        Playlists.Clear();
+        foreach (var playlist in playlists)
+            Playlists.Add(playlist);
+
+        _selectedPlaylist = selectedId == null ? null : Playlists.FirstOrDefault(p => p.Id == selectedId);
+        OnPropertyChanged(nameof(SelectedPlaylist));
+        CommandManager.InvalidateRequerySuggested();
+        await RefreshSelectedPlaylistAsync(ct);
+    }
+
+    private async Task AddToPlaylistAsync(object? parameter)
+    {
+        if (_selectedPlaylist == null || parameter is not WallpaperItem wallpaper) return;
+        await _playlistService.AddMemberAsync(_selectedPlaylist.Id, wallpaper.Id);
+        await ReloadPlaylistsKeepingSelectionAsync();
+    }
+
+    private async Task RemoveFromPlaylistAsync(object? parameter)
+    {
+        if (_selectedPlaylist == null) return;
+        var wallpaperId = parameter switch
+        {
+            PlaylistMemberRow row => row.WallpaperId,
+            PlaylistMember member => member.WallpaperId,
+            _ => (Guid?)null
+        };
+        if (wallpaperId == null) return;
+        await _playlistService.RemoveMemberAsync(_selectedPlaylist.Id, wallpaperId.Value);
+        await ReloadPlaylistsKeepingSelectionAsync();
+    }
+
+    private async Task DeleteSelectedPlaylistAsync()
+    {
+        if (_selectedPlaylist == null) return;
+        var id = _selectedPlaylist.Id;
+        await _playlistService.DeleteAsync(id);
+        SelectedPlaylist = null;
+        await ReloadPlaylistsKeepingSelectionAsync();
+    }
+
+    private async Task SavePlaylistSettingsAsync()
+    {
+        if (_selectedPlaylist == null) return;
+        await _playlistService.UpdateAsync(
+            _selectedPlaylist.Id,
+            PlaylistName,
+            PlaylistIntervalMinutes,
+            PlaylistShuffle);
+        await AssignPlaylistMonitorAsync();
+        await ReloadPlaylistsKeepingSelectionAsync();
+    }
+
+    private bool CanMovePlaylistMember(object? parameter, int offset)
+    {
+        if (parameter is not PlaylistMemberRow row) return false;
+        var index = PlaylistMembers.IndexOf(row);
+        var target = index + offset;
+        return _selectedPlaylist != null && index >= 0 && target >= 0 && target < PlaylistMembers.Count;
+    }
+
+    private async Task MovePlaylistMemberAsync(object? parameter, int offset)
+    {
+        if (parameter is not PlaylistMemberRow row) return;
+        var index = PlaylistMembers.IndexOf(row);
+        if (index < 0) return;
+        var target = index + offset;
+        if (target < 0 || target >= PlaylistMembers.Count) return;
+        await ReorderPlaylistMembersAsync(index, target);
+    }
+
+    public async Task MovePlaylistMemberAsync(PlaylistMemberRow source, PlaylistMemberRow target)
+    {
+        var sourceIndex = PlaylistMembers.IndexOf(source);
+        var targetIndex = PlaylistMembers.IndexOf(target);
+        if (sourceIndex < 0 || targetIndex < 0 || sourceIndex == targetIndex) return;
+        await ReorderPlaylistMembersAsync(sourceIndex, targetIndex);
+    }
+
+    private async Task ReorderPlaylistMembersAsync(int sourceIndex, int targetIndex)
+    {
+        if (_selectedPlaylist == null) return;
+        var ordered = PlaylistMembers.Select(m => m.WallpaperId).ToList();
+        var moved = ordered[sourceIndex];
+        ordered.RemoveAt(sourceIndex);
+        ordered.Insert(targetIndex, moved);
+        await _playlistService.ReorderMembersAsync(_selectedPlaylist.Id, ordered);
+        await ReloadPlaylistsKeepingSelectionAsync();
+    }
+
+    private async Task AssignPlaylistMonitorAsync()
+    {
+        if (_selectedPlaylist == null) return;
+        var currentMonitorKey = await _playlistService.GetMonitorKeyForPlaylistAsync(_selectedPlaylist.Id);
+        if (string.IsNullOrWhiteSpace(SelectedPlaylistMonitorKey))
+        {
+            if (!string.IsNullOrWhiteSpace(currentMonitorKey))
+                await _playlistService.AssignMonitorAsync(currentMonitorKey, null);
+            return;
+        }
+
+        await _playlistService.AssignMonitorAsync(SelectedPlaylistMonitorKey, _selectedPlaylist.Id);
+        if (!string.IsNullOrWhiteSpace(currentMonitorKey) && currentMonitorKey != SelectedPlaylistMonitorKey)
+            await _playlistService.AssignMonitorAsync(currentMonitorKey, null);
+        SelectedPlaylistMonitorKey = await _playlistService.GetMonitorKeyForPlaylistAsync(_selectedPlaylist.Id);
     }
 
     // 设置页热键重置按钮调用:应用新绑定(默认构造 = 默认热键)并持久化。
@@ -271,6 +523,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         var name = $"Playlist {DateTime.Now:HHmmss}";
         var id = await _playlistService.CreateAsync(name);
+        await ReloadPlaylistsKeepingSelectionAsync(id);
         _logger.Info($"Created playlist {name} ({id})");
         ShowToast(Strings.MsgPlaylistCreated, error: false);
     }
@@ -283,6 +536,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (item != null)
                 Wallpapers.Insert(0, item);
         }
+        if (_selectedPlaylist != null)
+            await RefreshSelectedPlaylistAsync(ct);
     }
 
     private async Task ImportAsync()
@@ -464,4 +719,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         try { await _settings.SaveAsync(Settings); }
         catch (Exception ex) { _logger.Warn($"Failed to save settings: {ex.Message}"); }
     }
+}
+
+public sealed class PlaylistMemberRow
+{
+    public PlaylistMemberRow(PlaylistMember member, string wallpaperName)
+    {
+        Member = member;
+        WallpaperName = wallpaperName;
+    }
+
+    public PlaylistMember Member { get; }
+    public Guid WallpaperId => Member.WallpaperId;
+    public int Order => Member.Order;
+    public string WallpaperName { get; }
 }

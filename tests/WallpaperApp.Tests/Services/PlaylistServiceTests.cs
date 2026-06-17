@@ -115,6 +115,55 @@ public sealed class PlaylistServiceTests : IDisposable
         Assert.Equal(5, pl!.LastPlayedIndex);
     }
 
+    [Fact]
+    public async Task Update_PersistsNameIntervalAndShuffle()
+    {
+        var svc = new PlaylistService(_logger, _db);
+        var id = await svc.CreateAsync("Old");
+
+        await svc.UpdateAsync(id, "New", 17, true);
+
+        var pl = await svc.GetByIdAsync(id);
+        Assert.Equal("New", pl!.Name);
+        Assert.Equal(17, pl.IntervalMinutes);
+        Assert.True(pl.Shuffle);
+    }
+
+    [Fact]
+    public async Task ReorderMembers_PersistsNewOrder()
+    {
+        var svc = new PlaylistService(_logger, _db);
+        var id = await svc.CreateAsync("L");
+        var w1 = Guid.NewGuid();
+        var w2 = Guid.NewGuid();
+        var w3 = Guid.NewGuid();
+        await svc.AddMemberAsync(id, w1);
+        await svc.AddMemberAsync(id, w2);
+        await svc.AddMemberAsync(id, w3);
+
+        await svc.ReorderMembersAsync(id, new[] { w3, w1, w2 });
+
+        var pl = await svc.GetByIdAsync(id);
+        Assert.Equal(w3, pl!.Members[0].WallpaperId);
+        Assert.Equal(0, pl.Members[0].Order);
+        Assert.Equal(w1, pl.Members[1].WallpaperId);
+        Assert.Equal(1, pl.Members[1].Order);
+        Assert.Equal(w2, pl.Members[2].WallpaperId);
+        Assert.Equal(2, pl.Members[2].Order);
+    }
+
+    [Fact]
+    public async Task GetMonitorKeyForPlaylist_ReturnsAssignment()
+    {
+        var svc = new PlaylistService(_logger, _db);
+        var id = await svc.CreateAsync("L");
+        await svc.AssignMonitorAsync("MON-1", id);
+
+        var monitorKey = await svc.GetMonitorKeyForPlaylistAsync(id);
+
+        Assert.Equal("MON-1", monitorKey);
+    }
+
     public void Dispose()
     {
         _connection.Dispose();

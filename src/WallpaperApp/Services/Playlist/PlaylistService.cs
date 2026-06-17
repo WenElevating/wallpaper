@@ -40,6 +40,17 @@ public sealed class PlaylistService
     public async Task<List<Playlist>> GetAllAsync(CancellationToken ct = default)
         => await _db.Playlists.Include(p => p.Members).OrderBy(p => p.Name).ToListAsync(ct);
 
+    public async Task UpdateAsync(Guid playlistId, string name, int intervalMinutes, bool shuffle, CancellationToken ct = default)
+    {
+        var pl = await _db.Playlists.FirstAsync(p => p.Id == playlistId, ct);
+        var trimmedName = name.Trim();
+        pl.Name = string.IsNullOrWhiteSpace(trimmedName) ? pl.Name : trimmedName;
+        pl.IntervalMinutes = Math.Max(1, intervalMinutes);
+        pl.Shuffle = shuffle;
+        pl.UpdatedAtUtc = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+    }
+
     public async Task<Playlist?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
         // Sort members in memory (EF Include+OrderBy + tracking is fragile).
@@ -55,6 +66,29 @@ public sealed class PlaylistService
         var pl = await _db.Playlists.Include(p => p.Members).FirstAsync(p => p.Id == playlistId, ct);
         var nextOrder = pl.Members.Count == 0 ? 0 : pl.Members.Max(m => m.Order) + 1;
         pl.Members.Add(new PlaylistMember { PlaylistId = playlistId, WallpaperId = wallpaperId, Order = nextOrder });
+        pl.UpdatedAtUtc = DateTime.UtcNow;
+        await _db.SaveChangesAsync(ct);
+    }
+
+    public async Task ReorderMembersAsync(Guid playlistId, IReadOnlyList<Guid> wallpaperIdsInOrder, CancellationToken ct = default)
+    {
+        var pl = await _db.Playlists.Include(p => p.Members).FirstAsync(p => p.Id == playlistId, ct);
+        var membersByWallpaperId = pl.Members.ToDictionary(m => m.WallpaperId);
+        var orderedMembers = new List<PlaylistMember>();
+        foreach (var wallpaperId in wallpaperIdsInOrder)
+        {
+            if (membersByWallpaperId.Remove(wallpaperId, out var member))
+                orderedMembers.Add(member);
+        }
+        orderedMembers.AddRange(membersByWallpaperId.Values.OrderBy(m => m.Order));
+
+        for (var i = 0; i < orderedMembers.Count; i++)
+            orderedMembers[i].Order = -orderedMembers.Count - i - 1;
+        await _db.SaveChangesAsync(ct);
+
+        for (var i = 0; i < orderedMembers.Count; i++)
+            orderedMembers[i].Order = i;
+
         pl.UpdatedAtUtc = DateTime.UtcNow;
         await _db.SaveChangesAsync(ct);
     }
@@ -128,6 +162,15 @@ public sealed class PlaylistService
         if (pl != null)
             pl.Members = pl.Members.OrderBy(m => m.Order).ToList();
         return pl;
+    }
+
+    public async Task<string?> GetMonitorKeyForPlaylistAsync(Guid playlistId, CancellationToken ct = default)
+    {
+        return await _db.MonitorPlaylistAssignments
+            .Where(a => a.PlaylistId == playlistId)
+            .OrderByDescending(a => a.UpdatedAtUtc)
+            .Select(a => a.MonitorKey)
+            .FirstOrDefaultAsync(ct);
     }
 
     public async Task<List<(string monitorKey, Guid playlistId)>> GetAllAssignmentsAsync(CancellationToken ct = default)
