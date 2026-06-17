@@ -237,13 +237,6 @@ public sealed class PlaybackSession : IDisposable
         var sw = new Stopwatch();
         var loggedMode = false;
 
-        // Frame-rate diagnostic: accumulate frames over a window and log the
-        // average every ~5s. The actual render rate reflects the video's PTS
-        // spacing (the loop paces to PTS), so this is the real content fps — the
-        // key number for deciding how much GPU headroom there is to recover.
-        var fpsFrames = 0;
-        var fpsStart = Stopwatch.StartNew();
-
         while (!ct.IsCancellationRequested && _backend!.IsPlaying)
         {
             // Pump window messages on the render thread so WM_NCHITTEST
@@ -280,17 +273,6 @@ public sealed class PlaybackSession : IDisposable
 
             var ok = _renderer!.Present(frame);
             frame.Dispose();
-
-            // Frame-rate diagnostic (see declaration above). Sampled in wall
-            // time, not PTS, so a looping video's seek-back doesn't skew it.
-            fpsFrames++;
-            if (fpsStart.ElapsedMilliseconds >= 5000)
-            {
-                var fps = fpsFrames * 1000.0 / fpsStart.ElapsedMilliseconds;
-                _logger.Info($"Monitor {_monitorId}: render rate ~{fps:F1} fps ({_backend.VideoWidth}x{_backend.VideoHeight})");
-                fpsFrames = 0;
-                fpsStart.Restart();
-            }
 
             // Signal readiness from the first frame's result so StartAsync
             // reports success only once the pipeline has actually rendered
