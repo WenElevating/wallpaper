@@ -67,6 +67,10 @@ internal static class Strings
     public static string PauseOnRemoteSessionLabel => Get(nameof(PauseOnRemoteSessionLabel));
     public static string HotkeyTogglePauseLabel => Get(nameof(HotkeyTogglePauseLabel));
     public static string HotkeyResetButton => Get(nameof(HotkeyResetButton));
+    public static string PlaylistLabel => Get(nameof(PlaylistLabel));
+    public static string PlaylistCreateButton => Get(nameof(PlaylistCreateButton));
+    public static string PlaylistEmptyHint => Get(nameof(PlaylistEmptyHint));
+    public static string MsgPlaylistCreated => Get(nameof(MsgPlaylistCreated));
     public static string MsgSetSuccessDesktop => Get(nameof(MsgSetSuccessDesktop));
     public static string MsgSetSuccessAll => Get(nameof(MsgSetSuccessAll));
     public static string MsgSetFailedShort => Get(nameof(MsgSetFailedShort));

@@ -178,6 +178,18 @@
   <data name="HotkeyResetButton" xml:space="preserve">
     <value>Reset</value>
   </data>
+  <data name="PlaylistLabel" xml:space="preserve">
+    <value>Playlists</value>
+  </data>
+  <data name="PlaylistCreateButton" xml:space="preserve">
+    <value>New Playlist</value>
+  </data>
+  <data name="PlaylistEmptyHint" xml:space="preserve">
+    <value>No playlists yet. Click "New Playlist" to create one.</value>
+  </data>
+  <data name="MsgPlaylistCreated" xml:space="preserve">
+    <value>Playlist created</value>
+  </data>
   <data name="MsgSetSuccessDesktop" xml:space="preserve">
     <value>Wallpaper set to desktop</value>
   </data>

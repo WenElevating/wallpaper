@@ -158,6 +158,28 @@
                     </StackPanel>
                 </Button>
 
+                <!-- Playlist nav -->
+                <Button Grid.Row="2" Height="58" Margin="6,2" VerticalAlignment="Top" Command="{Binding GoPlaylistCommand}">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource NavItemButton}">
+                            <Setter Property="ToolTip" Value="{loc:Loc PlaylistLabel}"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsPlaylist}" Value="True">
+                                    <Setter Property="Background" Value="#22374C63"/>
+                                    <Setter Property="Foreground" Value="{StaticResource AccentBrush}"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                    <StackPanel HorizontalAlignment="Center">
+                        <Path Data="M8,5 V19 L19,23 V1 Z M3,9 H6 V15 H3 Z"
+                              Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"
+                              Width="22" Height="22" Stretch="Uniform"
+                              HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                        <TextBlock Text="{loc:Loc PlaylistLabel}" FontSize="11" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                </Button>
+
                 <!-- Settings nav (pinned to the bottom of the rail) -->
                 <Button Grid.Row="3" Height="58" Margin="6,2" Command="{Binding GoSettingsCommand}">
                     <Button.Style>
@@ -308,6 +330,19 @@
                         </Style>
                     </views:SettingsView.Style>
                 </views:SettingsView>
+
+                <views:PlaylistView>
+                    <views:PlaylistView.Style>
+                        <Style TargetType="views:PlaylistView">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding CurrentView}" Value="Playlist">
+                                    <Setter Property="Visibility" Value="Visible"/>
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </views:PlaylistView.Style>
+                </views:PlaylistView>
             </Grid>
         </Grid>
         <!-- In-app toast (success / error), replaces the system MessageBox -->

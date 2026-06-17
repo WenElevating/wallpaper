@@ -178,6 +178,18 @@
   <data name="HotkeyResetButton" xml:space="preserve">
     <value>重置</value>
   </data>
+  <data name="PlaylistLabel" xml:space="preserve">
+    <value>播放列表</value>
+  </data>
+  <data name="PlaylistCreateButton" xml:space="preserve">
+    <value>新建列表</value>
+  </data>
+  <data name="PlaylistEmptyHint" xml:space="preserve">
+    <value>还没有播放列表。点击"新建列表"创建一个。</value>
+  </data>
+  <data name="MsgPlaylistCreated" xml:space="preserve">
+    <value>已创建播放列表</value>
+  </data>
   <data name="MsgSetSuccessDesktop" xml:space="preserve">
     <value>壁纸已设置到桌面</value>
   </data>
