@@ -384,11 +384,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         set => UpdatePerfSetting(s => s with { PauseOnBattery = value });
     }
 
+    public bool IsPauseOnRemoteSession
+    {
+        get => Settings.PauseOnRemoteSession;
+        set => UpdatePerfSetting(s => s with { PauseOnRemoteSession = value });
+    }
+
     private async void UpdatePerfSetting(Func<AppSettings, AppSettings> change)
     {
         Settings = change(Settings);
         OnPropertyChanged(nameof(IsGlobalPauseOnFullscreen));
         OnPropertyChanged(nameof(IsPauseOnBattery));
+        OnPropertyChanged(nameof(IsPauseOnRemoteSession));
         try { await _settings.SaveAsync(Settings); }
         catch (Exception ex) { _logger.Warn($"Failed to save settings: {ex.Message}"); }
     }
