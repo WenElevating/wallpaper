@@ -169,6 +169,9 @@
   <data name="PauseOnBatteryLabel" xml:space="preserve">
     <value>Pause while on battery power</value>
   </data>
+  <data name="PauseOnRemoteSessionLabel" xml:space="preserve">
+    <value>Pause during remote desktop / screen cast sessions</value>
+  </data>
   <data name="MsgSetSuccessDesktop" xml:space="preserve">
     <value>Wallpaper set to desktop</value>
   </data>
