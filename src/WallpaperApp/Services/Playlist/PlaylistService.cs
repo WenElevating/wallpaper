@@ -6,10 +6,17 @@ using WallpaperApp.Services.Logging;
 // Namespace is plural (Playlists) to avoid clashing with the Playlist model type.
 namespace WallpaperApp.Services.Playlists;
 
-// Playlist CRUD + index calculation. Holds a single AppDbContext for its
-// lifetime (PlaylistService is registered Transient in DI, so each consumer
-// gets a fresh service+context pair). This mirrors how LibraryService ultimately
-// uses AppDbContext and keeps the tracked-entity graph within one context.
+// Playlist CRUD + index calculation. Registered as a SINGLETON in DI and holds
+// one AppDbContext for its whole life (the rotation engine is single-instance
+// and long-lived). This is a deliberate captive-dependency trade-off: it keeps
+// the tracked-entity graph consistent for the runner's index round-trip
+// (GetByIdAsync + SaveLastIndexAsync share one context), at the cost of
+// accumulated tracking entries over a very long session and staleness if a
+// structural edit is ever made through a DIFFERENT context. Structural edits
+// (add/remove member, reassign) currently all flow through this same instance,
+// so staleness is not reachable today. If a future UI edits playlists through a
+// separate context, switch this to the per-method IServiceProvider pattern used
+// by LibraryService, or add AsNoTracking to reads + ExecuteUpdateAsync writes.
 public sealed class PlaylistService
 {
     private readonly FileLogger _logger;

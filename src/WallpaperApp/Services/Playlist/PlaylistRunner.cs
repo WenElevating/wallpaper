@@ -58,11 +58,22 @@ public sealed class PlaylistRunner
     }
 
     // Fire one switch (test-visible; the timer calls the same method).
+    // NOTE: rotation continues while wallpapers are paused (User/Fullscreen/...).
+    // A paused system that gets a fresh SetWallpaperAsync will resume playback.
+    // This is a known gap — gating ticks on pause state requires injecting a
+    // pause-signal into the runner; deferred to a follow-up. See plan F1 M-3.
     public async Task TickAsync()
     {
         if (!_started || _playlist.Members.Count == 0) return;
         _currentIndex = NextIndex();
-        await SwitchCurrentAsync();
+        try { await SwitchCurrentAsync(); }
+        catch (Exception ex)
+        {
+            // The switcher contract is Task<bool>, but assign/Guid.Parse can throw;
+            // never let a tick exception kill this monitor's rotation (the timer
+            // callback is async-void, so a throw would silently stop the timer).
+            _logger.Warn($"Playlist tick failed on {_monitorKey}: {ex.Message}");
+        }
         try { await _saveIndex(_currentIndex); }
         catch (Exception ex) { _logger.Warn($"Failed to save playlist index: {ex.Message}"); }
     }
