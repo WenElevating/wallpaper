@@ -11,6 +11,7 @@ using WallpaperApp.Models;
 using WallpaperApp.Services.Library;
 using WallpaperApp.Services.Logging;
 using WallpaperApp.Services.Monitor;
+using WallpaperApp.Services.Input;
 using WallpaperApp.Services.Playback;
 using WallpaperApp.Services.Settings;
 using WallpaperApp.UI;
@@ -28,6 +29,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly MonitorManager _monitors;
     private readonly SettingsService _settings;
     private readonly FileLogger _logger;
+    private readonly GlobalHotkeyService _hotkeys;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -147,13 +149,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
         PlaybackManager playback,
         MonitorManager monitors,
         SettingsService settings,
-        FileLogger logger)
+        FileLogger logger,
+        GlobalHotkeyService hotkeys)
     {
         _library = library;
         _playback = playback;
         _monitors = monitors;
         _settings = settings;
         _logger = logger;
+        _hotkeys = hotkeys;
 
         WallpapersView = CollectionViewSource.GetDefaultView(Wallpapers);
         WallpapersView.Filter = FilterWallpaper;
@@ -207,7 +211,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
         foreach (var item in items)
             Wallpapers.Add(item);
 
+        // F3: 注入热键回调并应用当前绑定。TogglePause 复用现有的暂停切换逻辑;
+        // SkipNext/SkipPrevious/ToggleMute 槽位本期默认 None(未绑定),F1(播放列表)
+        // /F4(声音)实现后在此追加对应 handler。
+        _hotkeys.SetHandler("TogglePause", async () =>
+        {
+            if (IsPaused) { await ResumeAllAsync(); IsPaused = false; }
+            else { await PauseAllAsync(); IsPaused = true; }
+        });
+        _hotkeys.Apply(Settings.Hotkeys);
+
         _logger.Debug($"Loaded {Wallpapers.Count} wallpapers, {Monitors.Count} monitors");
+    }
+
+    // 设置页热键重置按钮调用:应用新绑定(默认构造 = 默认热键)并持久化。
+    public async void ApplyHotkeys(HotkeyBindings bindings)
+    {
+        Settings = Settings with { Hotkeys = bindings };
+        _hotkeys.Apply(bindings);
+        try { await _settings.SaveAsync(Settings); }
+        catch (Exception ex) { _logger.Warn($"Failed to save hotkey settings: {ex.Message}"); }
     }
 
     public async Task ImportFilesAsync(IEnumerable<string> filePaths, CancellationToken ct = default)

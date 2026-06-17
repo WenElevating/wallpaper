@@ -8,6 +8,7 @@ using WallpaperApp.Services.Desktop;
 using WallpaperApp.Services.Library;
 using WallpaperApp.Services.Logging;
 using WallpaperApp.Services.Monitor;
+using WallpaperApp.Services.Input;
 using WallpaperApp.Services.Playback;
 using WallpaperApp.Services.Settings;
 using WallpaperApp.UI;
@@ -186,6 +187,7 @@ public partial class App : Application
         services.AddSingleton<MonitorManager>();
         services.AddSingleton<FullscreenDetector>();
         services.AddSingleton<WallpaperVisibilityDetector>();
+        services.AddSingleton<GlobalHotkeyService>();
         services.AddSingleton<MainViewModel>();
     }
 
@@ -214,6 +216,9 @@ public partial class App : Application
 
             _powerAware?.Dispose();
             _remoteSession?.Dispose();
+
+            var hotkeys = _serviceProvider.GetService<GlobalHotkeyService>();
+            hotkeys?.Dispose();
 
             var logger = _serviceProvider.GetService<FileLogger>();
             logger?.Dispose();
