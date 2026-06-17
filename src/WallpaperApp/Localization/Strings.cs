@@ -64,6 +64,7 @@ internal static class Strings
     public static string SettingsLabel => Get(nameof(SettingsLabel));
     public static string PauseOnFullscreenLabel => Get(nameof(PauseOnFullscreenLabel));
     public static string PauseOnBatteryLabel => Get(nameof(PauseOnBatteryLabel));
+    public static string PauseOnRemoteSessionLabel => Get(nameof(PauseOnRemoteSessionLabel));
     public static string MsgSetSuccessDesktop => Get(nameof(MsgSetSuccessDesktop));
     public static string MsgSetSuccessAll => Get(nameof(MsgSetSuccessAll));
     public static string MsgSetFailedShort => Get(nameof(MsgSetFailedShort));

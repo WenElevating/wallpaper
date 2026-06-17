@@ -15,6 +15,7 @@
 - **Software fallback** — FFmpeg software decode + Direct2D/DXGI CPU-upload rendering when GPU acceleration is unavailable.
 - **Fullscreen auto-pause** — Pauses all wallpapers when a fullscreen borderless application is detected.
 - **Battery-aware** — Automatically pauses wallpapers on battery power (laptop-friendly).
+- **Remote-session aware** — Automatically pauses wallpapers during Remote Desktop (RDP) or screen-cast (Miracast) sessions to save bandwidth.
 - **System tray** — Minimize-to-tray with a quick-pause context menu and language switching.
 - **Library management** — Browse, search, and sort imported wallpapers with thumbnail previews.
 - **Internationalization** — UI available in English and 中文 (Chinese), switchable at runtime.

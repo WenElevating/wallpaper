@@ -21,6 +21,7 @@ public partial class App : Application
     private ServiceProvider? _serviceProvider;
     private TrayIcon? _trayIcon;
     private PowerAwareController? _powerAware;
+    private RemoteSessionDetector? _remoteSession;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -138,6 +139,12 @@ public partial class App : Application
             _powerAware = new PowerAwareController(logger, playback, currentSettings);
             _powerAware.Start();
 
+            // F2: pause wallpapers during RDP / Miracast sessions (bandwidth saver).
+            // Same Func<AppSettings> accessor as the other detectors so the user
+            // can toggle PauseOnRemoteSession at runtime.
+            _remoteSession = new RemoteSessionDetector(logger, playback, currentSettings);
+            _remoteSession.Start();
+
             _trayIcon = new TrayIcon(viewModel, logger);
 
             if (!appSettings.StartMinimizedToTray)
@@ -206,6 +213,7 @@ public partial class App : Application
             visibility?.Dispose();
 
             _powerAware?.Dispose();
+            _remoteSession?.Dispose();
 
             var logger = _serviceProvider.GetService<FileLogger>();
             logger?.Dispose();

@@ -9,6 +9,8 @@ public record AppSettings
     public bool GlobalPauseOnFullscreen { get; init; } = true;
     /// <summary>Pause all wallpapers while running on battery power (laptops).</summary>
     public bool PauseOnBattery { get; init; } = true;
+    /// <summary>Pause all wallpapers during an RDP or Miracast session (bandwidth saver).</summary>
+    public bool PauseOnRemoteSession { get; init; } = true;
     public FitMode DefaultFitMode { get; init; } = FitMode.Fill;
     public bool HardwareAccelerationEnabled { get; init; } = true;
     public string LogVerbosity { get; init; } = "Info";

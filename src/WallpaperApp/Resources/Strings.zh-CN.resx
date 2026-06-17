@@ -169,6 +169,9 @@
   <data name="PauseOnBatteryLabel" xml:space="preserve">
     <value>使用电池时暂停</value>
   </data>
+  <data name="PauseOnRemoteSessionLabel" xml:space="preserve">
+    <value>在远程桌面 / 投屏会话期间暂停</value>
+  </data>
   <data name="MsgSetSuccessDesktop" xml:space="preserve">
     <value>壁纸已设置到桌面</value>
   </data>

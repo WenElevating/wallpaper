@@ -17,6 +17,7 @@ public enum PauseReason
     Fullscreen,
     Power,
     Occluded, // wallpaper fully covered by other windows (not visible)
+    RemoteDesktop, // RDP or Miracast session active (bandwidth saver)
 }
 
 // Owns the entire per-monitor render pipeline on a SINGLE dedicated thread:
