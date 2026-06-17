@@ -447,4 +447,100 @@ internal static partial class NativeMethods
     internal const int SIMPLEREGION = 2;
     internal const int COMPLEXREGION = 3;
     internal const int ERROR_RGN = 0;
+
+    // ---- RDP quick check (F2) ----
+    // GetSystemMetrics 已在上方声明(用于全屏检测);这里只补充 SM_REMOTESESSION 常量。
+    internal const int SM_REMOTESESSION = 0x1000;
+
+    // ---- Miracast / indirect display detection (F2) ----
+    // QueryDisplayConfig 枚举当前所有显示路径,用于发现无线投屏 / 间接显示器。
+    // DISPLAYCONFIG_PATH_INFO.targetInfo.outputTechnology 指示输出技术类型。
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    internal static partial int QueryDisplayConfig(
+        uint flags,
+        ref uint numPathArrayElements,
+        [Out] DISPLAYCONFIG_PATH_INFO[] pathInfoArray,
+        ref uint numModeInfoArrayElements,
+        [Out] DISPLAYCONFIG_MODE_INFO[] modeInfoArray,
+        IntPtr currentTopologyId);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    internal static partial int GetDisplayConfigBufferSizes(
+        uint flags,
+        out uint numPathArrayElements,
+        out uint numModeInfoArrayElements);
+
+    // QDC_ALL_PATHS = 枚举所有路径(含未激活),确保投屏目标被覆盖。
+    internal const uint QDC_ALL_PATHS = 0x00000001;
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DISPLAYCONFIG_PATH_SOURCE_INFO
+    {
+        public uint adapterId_Low;
+        public uint adapterId_High;
+        public uint id;
+        public uint modeInfoIdx; // 联合体,取低 16 位为 source mode idx
+        public uint statusFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DISPLAYCONFIG_RATIONAL
+    {
+        public uint Numerator;
+        public uint Denominator;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DISPLAYCONFIG_PATH_TARGET_INFO
+    {
+        public uint adapterId_Low;
+        public uint adapterId_High;
+        public uint id;
+        public uint modeInfoIdx; // 联合体;低 16 位 = target mode idx
+        public uint outputTechnology; // DISPLAYCONFIG_OUTPUT_TECHNOLOGY_*
+        public uint outputTechnology_Reserved;
+        public DISPLAYCONFIG_RATIONAL refreshRate;
+        public uint scanLineOrdering;
+        public uint targetAvailable;
+        public uint statusFlags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DISPLAYCONFIG_PATH_INFO
+    {
+        public DISPLAYCONFIG_PATH_SOURCE_INFO sourceInfo;
+        public DISPLAYCONFIG_PATH_TARGET_INFO targetInfo;
+        public uint flags;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct DISPLAYCONFIG_MODE_INFO
+    {
+        public uint infoType;
+        public uint id;
+        public uint adapterId_Low;
+        public uint adapterId_High;
+        public DISPLAYCONFIG_MODE_INFO_Union modeInfo; // 联合体;此处不细分字段
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    internal struct DISPLAYCONFIG_MODE_INFO_Union
+    {
+        // targetMode 与 sourceMode 是联合体;我们只关心结构大小对齐,
+        // 实际取值不读,所以用固定大小的占位缓冲。
+        [FieldOffset(0)] public long _placeholder1;
+        [FieldOffset(8)] public long _placeholder2;
+        [FieldOffset(16)] public long _placeholder3;
+        [FieldOffset(24)] public long _placeholder4;
+    }
+
+    // DISPLAYCONFIG_OUTPUT_TECHNOLOGY_* 取值(用于判定投屏类型)。
+    internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_OTHER = 0xFFFFFFFFu; // -1 unsigned
+    internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HDMI = 5;
+    internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DVI = 6;
+    internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_MIRACAST = 11;
+    internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_WIRED = 12;
+    internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_VIRTUAL = 14;
+    internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DISPLAYPORT_USB_TUNNELING = 15;
 }
