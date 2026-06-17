@@ -4,7 +4,7 @@ using WallpaperApp.Services.Logging;
 
 namespace WallpaperApp.Services.Playback;
 
-public sealed class PlaybackManager : IDisposable
+public sealed class PlaybackManager : IDisposable, IPlaybackPauseController
 {
     private readonly FileLogger _logger;
     private readonly DesktopHost _desktopHost;

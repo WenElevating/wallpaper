@@ -494,15 +494,18 @@ internal static partial class NativeMethods
     [StructLayout(LayoutKind.Sequential)]
     internal struct DISPLAYCONFIG_PATH_TARGET_INFO
     {
-        public uint adapterId_Low;
-        public uint adapterId_High;
+        // 布局必须与 Win32 DISPLAYCONFIG_PATH_TARGET_INFO 完全一致(48 字节),
+        // 否则 [Out] 数组 marshal 步长错误,导致多 path 读取错位甚至堆损坏。
+        public uint adapterId_Low;            // adapterId (LUID) 低 32 位
+        public uint adapterId_High;           // adapterId (LUID) 高 32 位
         public uint id;
-        public uint modeInfoIdx; // 联合体;低 16 位 = target mode idx
-        public uint outputTechnology; // DISPLAYCONFIG_OUTPUT_TECHNOLOGY_*
-        public uint outputTechnology_Reserved;
+        public uint modeInfoIdx;              // 联合体;低 16 位 = target mode idx
+        public uint outputTechnology;         // DISPLAYCONFIG_OUTPUT_TECHNOLOGY_*
+        public uint rotation;                 // DISPLAYCONFIG_ROTATION
+        public uint scaling;                  // DISPLAYCONFIG_SCALING
         public DISPLAYCONFIG_RATIONAL refreshRate;
-        public uint scanLineOrdering;
-        public uint targetAvailable;
+        public uint scanLineOrdering;         // DISPLAYCONFIG_SCANLINE_ORDERING
+        public uint targetAvailable;          // BOOL
         public uint statusFlags;
     }
 
@@ -527,18 +530,18 @@ internal static partial class NativeMethods
     [StructLayout(LayoutKind.Explicit)]
     internal struct DISPLAYCONFIG_MODE_INFO_Union
     {
-        // targetMode 与 sourceMode 是联合体;我们只关心结构大小对齐,
-        // 实际取值不读,所以用固定大小的占位缓冲。
+        // targetMode 与 sourceMode 是联合体;最大成员 DISPLAYCONFIG_TARGET_MODE
+        // 包含 DISPLAYCONFIG_VIDEO_SIGNAL_INFO(48 字节)。我们只关心结构大小对齐,
+        // 实际取值不读,所以用 48 字节的占位缓冲(6 个 long),保证 marshal 步长正确。
         [FieldOffset(0)] public long _placeholder1;
         [FieldOffset(8)] public long _placeholder2;
         [FieldOffset(16)] public long _placeholder3;
         [FieldOffset(24)] public long _placeholder4;
+        [FieldOffset(32)] public long _placeholder5;
+        [FieldOffset(40)] public long _placeholder6;
     }
 
-    // DISPLAYCONFIG_OUTPUT_TECHNOLOGY_* 取值(用于判定投屏类型)。
-    internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_OTHER = 0xFFFFFFFFu; // -1 unsigned
-    internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_HDMI = 5;
-    internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_DVI = 6;
+    // DISPLAYCONFIG_OUTPUT_TECHNOLOGY_* 取值(仅保留本功能实际使用的)。
     internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_MIRACAST = 11;
     internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_WIRED = 12;
     internal const uint DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_VIRTUAL = 14;
