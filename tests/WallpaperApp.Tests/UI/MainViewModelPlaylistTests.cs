@@ -259,8 +259,9 @@ public sealed class MainViewModelPlaylistTests : IDisposable
         var settingsPath = Path.Combine(_tempDir, "settings.json");
         var settings = new SettingsService(settingsPath);
         var hotkeys = new GlobalHotkeyService(_logger);
+        var shuffler = new RandomWallpaperSwitcher(_logger);
 
-        return new MainViewModel(library, playback, monitors, settings, _logger, hotkeys, playlistService);
+        return new MainViewModel(library, playback, monitors, settings, _logger, hotkeys, playlistService, shuffler);
     }
 
     private async Task<WallpaperItem> SeedWallpaperAsync(string name)
