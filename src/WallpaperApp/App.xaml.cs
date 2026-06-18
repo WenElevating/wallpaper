@@ -26,9 +26,35 @@ public partial class App : Application
     private RemoteSessionDetector? _remoteSession;
     private PlaylistCoordinator? _playlists;
 
+    // Single-instance guard. Held for the whole process lifetime so a second
+    // launch detects the first and exits instead of fighting over the same log
+    // files, library DB, and wallpaper windows. Must be a field (not a local)
+    // so it isn't GC'd and released while the app runs.
+    private Mutex? _singleInstanceMutex;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Reject a second instance early, before any file/resource is opened.
+        _singleInstanceMutex = new Mutex(initiallyOwned: true, name: @"Global\WallpaperApp.SingleInstance", out var createdNew);
+        if (!createdNew)
+        {
+            // Another instance owns the mutex — tell the user and bail out.
+            try
+            {
+                MessageBox.Show(
+                    Strings.MsgAlreadyRunning,
+                    Strings.AppName,
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch { }
+            // Release this instance's claim on the mutex and exit cleanly.
+            _singleInstanceMutex.ReleaseMutex();
+            Shutdown();
+            return;
+        }
 
         DispatcherUnhandledException += (_, args) =>
         {

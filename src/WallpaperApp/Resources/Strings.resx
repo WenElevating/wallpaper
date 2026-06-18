@@ -304,4 +304,10 @@
   <data name="MsgLibrarySamePath" xml:space="preserve">
     <value>That's already the current storage location</value>
   </data>
+  <data name="AppName" xml:space="preserve">
+    <value>WallpaperApp</value>
+  </data>
+  <data name="MsgAlreadyRunning" xml:space="preserve">
+    <value>WallpaperApp is already running.</value>
+  </data>
 </root>

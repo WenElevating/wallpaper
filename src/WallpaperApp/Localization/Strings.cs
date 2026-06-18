@@ -109,4 +109,6 @@ internal static class Strings
     public static string MsgLibraryMigratePartial => Get(nameof(MsgLibraryMigratePartial));
     public static string MsgLibraryMigrateFailed => Get(nameof(MsgLibraryMigrateFailed));
     public static string MsgLibrarySamePath => Get(nameof(MsgLibrarySamePath));
+    public static string AppName => Get(nameof(AppName));
+    public static string MsgAlreadyRunning => Get(nameof(MsgAlreadyRunning));
 }

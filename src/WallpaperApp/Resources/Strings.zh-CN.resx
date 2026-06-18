@@ -304,4 +304,10 @@
   <data name="MsgLibrarySamePath" xml:space="preserve">
     <value>该路径已是当前存储位置</value>
   </data>
+  <data name="AppName" xml:space="preserve">
+    <value>壁纸应用</value>
+  </data>
+  <data name="MsgAlreadyRunning" xml:space="preserve">
+    <value>壁纸应用已经在运行中。</value>
+  </data>
 </root>
