@@ -208,4 +208,70 @@
   <data name="MsgShuffleNoLibrary" xml:space="preserve">
     <value>壁纸库为空</value>
   </data>
+  <data name="MenuSetAsWallpaper" xml:space="preserve">
+    <value>设为壁纸</value>
+  </data>
+  <data name="MenuOpenDetail" xml:space="preserve">
+    <value>打开详情</value>
+  </data>
+  <data name="MenuOpenFileLocation" xml:space="preserve">
+    <value>在文件夹中打开</value>
+  </data>
+  <data name="MenuRename" xml:space="preserve">
+    <value>重命名…</value>
+  </data>
+  <data name="MenuAddToPlaylist" xml:space="preserve">
+    <value>加入播放列表…</value>
+  </data>
+  <data name="MenuCopyToFolder" xml:space="preserve">
+    <value>复制到…</value>
+  </data>
+  <data name="MenuDelete" xml:space="preserve">
+    <value>删除</value>
+  </data>
+  <data name="DlgCancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="DlgDeleteTitle" xml:space="preserve">
+    <value>删除壁纸</value>
+  </data>
+  <data name="DlgDeletePrompt" xml:space="preserve">
+    <value>确定要删除"{0}"吗？此操作将永久删除源文件，无法恢复。</value>
+  </data>
+  <data name="DlgDeletePlaying" xml:space="preserve">
+    <value>正在某显示器上播放</value>
+  </data>
+  <data name="DlgDeletePlaylistRefs" xml:space="preserve">
+    <value>被 {0} 个播放列表引用</value>
+  </data>
+  <data name="DlgDeleteConfirm" xml:space="preserve">
+    <value>删除</value>
+  </data>
+  <data name="DlgRenameTitle" xml:space="preserve">
+    <value>重命名壁纸</value>
+  </data>
+  <data name="DlgPickPlaylistTitle" xml:space="preserve">
+    <value>加入播放列表</value>
+  </data>
+  <data name="DlgPlaylistEmpty" xml:space="preserve">
+    <value>没有播放列表，请先在"播放列表"页创建。</value>
+  </data>
+  <data name="DlgCopyTitle" xml:space="preserve">
+    <value>复制壁纸到…</value>
+  </data>
+  <data name="MsgDeleted" xml:space="preserve">
+    <value>已删除"{0}"</value>
+  </data>
+  <data name="MsgRenamed" xml:space="preserve">
+    <value>已重命名</value>
+  </data>
+  <data name="MsgAddedToPlaylist" xml:space="preserve">
+    <value>已加入"{0}"</value>
+  </data>
+  <data name="MsgCopySuccess" xml:space="preserve">
+    <value>已复制</value>
+  </data>
+  <data name="MsgCopyFailed" xml:space="preserve">
+    <value>复制失败</value>
+  </data>
 </root>

@@ -77,4 +77,26 @@ internal static class Strings
     public static string MenuShuffleWallpaper => Get(nameof(MenuShuffleWallpaper));
     public static string MsgShuffleDone => Get(nameof(MsgShuffleDone));
     public static string MsgShuffleNoLibrary => Get(nameof(MsgShuffleNoLibrary));
+    public static string MenuSetAsWallpaper => Get(nameof(MenuSetAsWallpaper));
+    public static string MenuOpenDetail => Get(nameof(MenuOpenDetail));
+    public static string MenuOpenFileLocation => Get(nameof(MenuOpenFileLocation));
+    public static string MenuRename => Get(nameof(MenuRename));
+    public static string MenuAddToPlaylist => Get(nameof(MenuAddToPlaylist));
+    public static string MenuCopyToFolder => Get(nameof(MenuCopyToFolder));
+    public static string MenuDelete => Get(nameof(MenuDelete));
+    public static string DlgCancel => Get(nameof(DlgCancel));
+    public static string DlgDeleteTitle => Get(nameof(DlgDeleteTitle));
+    public static string DlgDeletePrompt => Get(nameof(DlgDeletePrompt));
+    public static string DlgDeletePlaying => Get(nameof(DlgDeletePlaying));
+    public static string DlgDeletePlaylistRefs => Get(nameof(DlgDeletePlaylistRefs));
+    public static string DlgDeleteConfirm => Get(nameof(DlgDeleteConfirm));
+    public static string DlgRenameTitle => Get(nameof(DlgRenameTitle));
+    public static string DlgPickPlaylistTitle => Get(nameof(DlgPickPlaylistTitle));
+    public static string DlgPlaylistEmpty => Get(nameof(DlgPlaylistEmpty));
+    public static string DlgCopyTitle => Get(nameof(DlgCopyTitle));
+    public static string MsgDeleted => Get(nameof(MsgDeleted));
+    public static string MsgRenamed => Get(nameof(MsgRenamed));
+    public static string MsgAddedToPlaylist => Get(nameof(MsgAddedToPlaylist));
+    public static string MsgCopySuccess => Get(nameof(MsgCopySuccess));
+    public static string MsgCopyFailed => Get(nameof(MsgCopyFailed));
 }

@@ -208,4 +208,70 @@
   <data name="MsgShuffleNoLibrary" xml:space="preserve">
     <value>No wallpapers in library</value>
   </data>
+  <data name="MenuSetAsWallpaper" xml:space="preserve">
+    <value>Set as wallpaper</value>
+  </data>
+  <data name="MenuOpenDetail" xml:space="preserve">
+    <value>Open details</value>
+  </data>
+  <data name="MenuOpenFileLocation" xml:space="preserve">
+    <value>Open file location</value>
+  </data>
+  <data name="MenuRename" xml:space="preserve">
+    <value>Rename…</value>
+  </data>
+  <data name="MenuAddToPlaylist" xml:space="preserve">
+    <value>Add to playlist…</value>
+  </data>
+  <data name="MenuCopyToFolder" xml:space="preserve">
+    <value>Copy to…</value>
+  </data>
+  <data name="MenuDelete" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="DlgCancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="DlgDeleteTitle" xml:space="preserve">
+    <value>Delete wallpaper</value>
+  </data>
+  <data name="DlgDeletePrompt" xml:space="preserve">
+    <value>Are you sure you want to delete "{0}"? The source file will be permanently removed.</value>
+  </data>
+  <data name="DlgDeletePlaying" xml:space="preserve">
+    <value>Currently playing on a monitor</value>
+  </data>
+  <data name="DlgDeletePlaylistRefs" xml:space="preserve">
+    <value>Referenced by {0} playlist(s)</value>
+  </data>
+  <data name="DlgDeleteConfirm" xml:space="preserve">
+    <value>Delete</value>
+  </data>
+  <data name="DlgRenameTitle" xml:space="preserve">
+    <value>Rename wallpaper</value>
+  </data>
+  <data name="DlgPickPlaylistTitle" xml:space="preserve">
+    <value>Add to playlist</value>
+  </data>
+  <data name="DlgPlaylistEmpty" xml:space="preserve">
+    <value>No playlists yet. Create one in the Playlists tab first.</value>
+  </data>
+  <data name="DlgCopyTitle" xml:space="preserve">
+    <value>Copy wallpaper to…</value>
+  </data>
+  <data name="MsgDeleted" xml:space="preserve">
+    <value>Deleted "{0}"</value>
+  </data>
+  <data name="MsgRenamed" xml:space="preserve">
+    <value>Renamed</value>
+  </data>
+  <data name="MsgAddedToPlaylist" xml:space="preserve">
+    <value>Added to "{0}"</value>
+  </data>
+  <data name="MsgCopySuccess" xml:space="preserve">
+    <value>Copied</value>
+  </data>
+  <data name="MsgCopyFailed" xml:space="preserve">
+    <value>Copy failed</value>
+  </data>
 </root>
