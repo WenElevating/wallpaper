@@ -100,4 +100,5 @@ internal static class Strings
     public static string MsgAddedToPlaylist => Get(nameof(MsgAddedToPlaylist));
     public static string MsgCopySuccess => Get(nameof(MsgCopySuccess));
     public static string MsgCopyFailed => Get(nameof(MsgCopyFailed));
+    public static string MsgNameEmpty => Get(nameof(MsgNameEmpty));
 }

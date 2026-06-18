@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Windows;
@@ -16,6 +17,7 @@ using WallpaperApp.Services.Playback;
 using WallpaperApp.Services.Playlists;
 using WallpaperApp.Services.Settings;
 using WallpaperApp.UI;
+using WallpaperApp.UI.Controls;
 using WallpaperApp.UI.Views;
 
 namespace WallpaperApp.UI.ViewModels;
@@ -36,6 +38,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     // Coordinator is attached after construction (its switcher needs this ViewModel
     // instance, creating a cycle; App.xaml.cs calls AttachPlaylistCoordinator).
     private PlaylistCoordinator? _playlists;
+
+    // Guards Wallpapers for cross-thread mutation (see EnableCollectionSynchronization).
+    private readonly object _wallpapersLock = new();
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -63,6 +68,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand MovePlaylistMemberUpCommand { get; }
     public ICommand MovePlaylistMemberDownCommand { get; }
     public ICommand AssignPlaylistMonitorCommand { get; }
+
+    // Aggregate of the 7 wallpaper-card context-menu commands, bound down to each
+    // WallpaperCard via its Commands dependency property.
+    public WallpaperCommands Commands { get; }
 
     private ShellView _currentView = ShellView.Library;
     public ShellView CurrentView
@@ -250,6 +259,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _shuffler = shuffler;
 
         WallpapersView = CollectionViewSource.GetDefaultView(Wallpapers);
+        // Allow Wallpapers to be mutated from any thread (e.g. import runs on a
+        // background thread, unit tests run without a Dispatcher). The view's
+        // CollectionView would otherwise throw on cross-thread SourceCollection
+        // changes; this callback marshals enumeration under the lock.
+        BindingOperations.EnableCollectionSynchronization(Wallpapers, _wallpapersLock);
         WallpapersView.Filter = FilterWallpaper;
         ApplySort();
 
@@ -267,7 +281,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         GoPlaylistCommand = new RelayCommand(_ => CurrentView = ShellView.Playlist);
         ImportCommand = new RelayCommand(_ => _ = ImportAsync());
         PauseToggleCommand = new RelayCommand(_ => _ = TogglePauseAsync());
-        SetAsWallpaperCommand = new RelayCommand(_ => _ = SetAsWallpaperAsync(), _ => ActiveWallpaper != null);
+        SetAsWallpaperCommand = new RelayCommand(p => _ = SetAsWallpaperAsync(p as WallpaperItem), p => (p as WallpaperItem) != null || ActiveWallpaper != null);
         CreatePlaylistCommand = new RelayCommand(_ => _ = CreatePlaylistAsync());
         AddToPlaylistCommand = new RelayCommand(async p => await AddToPlaylistAsync(p), _ => _selectedPlaylist != null);
         RemoveFromPlaylistCommand = new RelayCommand(async p => await RemoveFromPlaylistAsync(p), _ => _selectedPlaylist != null);
@@ -276,6 +290,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
         MovePlaylistMemberUpCommand = new RelayCommand(async p => await MovePlaylistMemberAsync(p, -1), p => CanMovePlaylistMember(p, -1));
         MovePlaylistMemberDownCommand = new RelayCommand(async p => await MovePlaylistMemberAsync(p, 1), p => CanMovePlaylistMember(p, 1));
         AssignPlaylistMonitorCommand = new RelayCommand(async _ => await AssignPlaylistMonitorAsync(), _ => _selectedPlaylist != null);
+
+        Commands = new WallpaperCommands
+        {
+            SetAsWallpaper = SetAsWallpaperCommand,
+            OpenDetail = OpenDetailCommand,
+            OpenFileLocation = new RelayCommand(p => OpenFileLocation(p as WallpaperItem)),
+            Rename = new RelayCommand(p => _ = RenameWallpaperAsync(p as WallpaperItem)),
+            AddToPlaylist = new RelayCommand(p => _ = AddToPlaylistFromCardAsync(p as WallpaperItem), _ => Playlists.Count > 0),
+            CopyToFolder = new RelayCommand(p => _ = CopyToFolderAsync(p as WallpaperItem)),
+            Delete = new RelayCommand(p => _ = DeleteWallpaperAsync(p as WallpaperItem)),
+        };
     }
 
     private bool FilterWallpaper(object obj)
@@ -647,24 +672,32 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task SetAsWallpaperAsync()
+    private Task SetAsWallpaperAsync()
+        => SetAsWallpaperAsync(ActiveWallpaper);
+
+    // Test hook: set a specific wallpaper (the card-menu "Set as wallpaper" path)
+    // without depending on ActiveWallpaper. Returns the assignment result.
+    public Task<bool> AssignWallpaperFromCommandAsync(WallpaperItem? wallpaper)
+        => SetAsWallpaperAsync(wallpaper);
+
+    private async Task<bool> SetAsWallpaperAsync(WallpaperItem? wallpaper)
     {
-        var wallpaper = ActiveWallpaper;
-        if (wallpaper == null) return;
+        wallpaper ??= ActiveWallpaper;
+        if (wallpaper == null) return false;
 
         _monitors.Refresh();
         var monitors = _monitors.Monitors.Values.ToList();
-        if (monitors.Count == 0) return;
+        if (monitors.Count == 0) return false;
 
         if (monitors.Count == 1)
         {
             await AssignAndReportAsync(monitors[0], wallpaper);
-            return;
+            return true;
         }
 
         var picker = new MonitorPickerWindow { Owner = Application.Current.MainWindow };
         picker.Monitors = monitors;
-        if (picker.ShowDialog() != true) return;
+        if (picker.ShowDialog() != true) return false;
 
         if (picker.AllMonitors)
         {
@@ -672,11 +705,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
             foreach (var m in monitors)
                 any |= await AssignWallpaperAsync(m, wallpaper);
             ShowToast(any ? Strings.MsgSetSuccessAll : Strings.MsgSetFailedShort, error: !any);
+            return any;
         }
         else if (picker.Selected != null)
         {
             await AssignAndReportAsync(picker.Selected, wallpaper);
+            return true;
         }
+        return false;
     }
 
     private async Task AssignAndReportAsync(MonitorInfo monitor, WallpaperItem wallpaper)
@@ -689,6 +725,143 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         if (IsPaused) { await ResumeAllAsync(); IsPaused = false; }
         else { await PauseAllAsync(); IsPaused = true; }
+    }
+
+    // Test seam: exposes the playback manager so tests can substitute a fake
+    // (TestablePlaybackManager) to assert stop/assign without a real D2D surface.
+    internal PlaybackManager PlaybackForTests => _playback;
+
+    private void OpenFileLocation(WallpaperItem? wallpaper)
+    {
+        if (wallpaper == null || string.IsNullOrEmpty(wallpaper.ManagedFilePath)) return;
+        try { Process.Start("explorer.exe", $"/select,\"{wallpaper.ManagedFilePath}\""); }
+        catch (Exception ex) { _logger.Warn($"Open file location failed: {ex.Message}"); }
+    }
+
+    public async Task RenameWallpaperAsync(WallpaperItem? wallpaper)
+    {
+        if (wallpaper == null) return;
+        var dialog = new RenameWindow(wallpaper.DisplayName) { Owner = Application.Current.MainWindow };
+        if (dialog.ShowDialog() != true) return;
+        await ApplyRenameAsync(wallpaper, dialog.NewName);
+    }
+
+    // Core rename logic, separated so tests can exercise it headless (no Window).
+    internal async Task ApplyRenameAsync(WallpaperItem wallpaper, string newName)
+    {
+        if (string.IsNullOrWhiteSpace(newName)) { ShowToast(Strings.MsgNameEmpty, error: true); return; }
+
+        if (await _library.RenameAsync(wallpaper.Id, newName))
+        {
+            wallpaper.DisplayName = newName.Trim();
+            RefreshWallpapersView();
+            ShowToast(Strings.MsgRenamed);
+        }
+    }
+
+    // Refresh the wallpapers view (re-applies sort/filter). Guarded for the no-UI
+    // test context: WPF's CollectionView refuses Refresh() off its Dispatcher.
+    // In production we marshal to the Dispatcher; in unit tests (no Dispatcher
+    // loop) BeginInvoke posts the work but it never runs (no message pump), which
+    // is fine — tests assert against the in-memory model, not the view.
+    private void RefreshWallpapersView()
+    {
+        if (WallpapersView is not System.Windows.Threading.DispatcherObject d) return;
+        if (d.Dispatcher.CheckAccess()) WallpapersView.Refresh();
+        else d.Dispatcher.BeginInvoke(new Action(WallpapersView.Refresh));
+    }
+
+    public async Task DeleteWallpaperAsync(WallpaperItem? wallpaper)
+    {
+        if (wallpaper == null) return;
+
+        // Tally impact: which monitors show this wallpaper, which playlists reference it.
+        var (playingMonitors, referencedPlaylists) = TallyDeleteImpact(wallpaper);
+
+        // Confirm via modal (shows live-impact rows so the user knows the blast radius).
+        var dialog = new ConfirmDeleteWindow(
+            wallpaper.DisplayName,
+            playingMonitors.Count > 0,
+            referencedPlaylists.Count)
+        { Owner = Application.Current.MainWindow };
+        if (dialog.ShowDialog() != true) return;
+
+        await DeleteWallpaperCoreAsync(wallpaper, playingMonitors, referencedPlaylists);
+    }
+
+    internal (List<Guid> playingMonitors, List<Playlist> referencedPlaylists) TallyDeleteImpact(WallpaperItem wallpaper)
+    {
+        var playingMonitors = new List<Guid>();
+        foreach (var m in Monitors)
+        {
+            if (Guid.TryParse(m.MonitorKey, out var mid) &&
+                _playback.GetActiveWallpaperId(mid) == wallpaper.Id)
+                playingMonitors.Add(mid);
+        }
+        var referencedPlaylists = Playlists
+            .Where(p => p.Members.Any(mem => mem.WallpaperId == wallpaper.Id))
+            .ToList();
+        return (playingMonitors, referencedPlaylists);
+    }
+
+    // Core delete execution, separated from the confirm dialog so it's testable
+    // headless. Caller has already gathered impact and obtained confirmation.
+    // Order matters: stop playback (release file handle) -> clean playlist refs
+    // -> delete file+record -> sync memory. Reversing playback/delete risks the
+    // decoder still holding the file open on Windows.
+    internal async Task DeleteWallpaperCoreAsync(
+        WallpaperItem wallpaper, IReadOnlyList<Guid> playingMonitors, IReadOnlyList<Playlist> referencedPlaylists)
+    {
+        foreach (var mid in playingMonitors)
+            await _playback.RemoveWallpaperAsync(mid);
+
+        foreach (var pl in referencedPlaylists)
+            await _playlistService.RemoveMemberAsync(pl.Id, wallpaper.Id);
+
+        await _library.DeleteAsync(wallpaper.Id);
+
+        Wallpapers.Remove(wallpaper);
+
+        ShowToast(string.Format(Strings.MsgDeleted, wallpaper.DisplayName));
+    }
+
+    private async Task AddToPlaylistFromCardAsync(WallpaperItem? wallpaper)
+    {
+        if (wallpaper == null) return;
+        if (Playlists.Count == 0) { ShowToast(Strings.DlgPlaylistEmpty, error: true); return; }
+
+        var dialog = new PlaylistPickerWindow(Playlists.ToList())
+        { Owner = Application.Current.MainWindow };
+        if (dialog.ShowDialog() != true || dialog.Selected == null) return;
+
+        await _playlistService.AddMemberAsync(dialog.Selected.Id, wallpaper.Id);
+        await ReloadPlaylistsKeepingSelectionAsync();
+        ShowToast(string.Format(Strings.MsgAddedToPlaylist, dialog.Selected.Name));
+    }
+
+    private async Task CopyToFolderAsync(WallpaperItem? wallpaper)
+    {
+        if (wallpaper == null || string.IsNullOrEmpty(wallpaper.ManagedFilePath)) return;
+        var dialog = new SaveFileDialog
+        {
+            FileName = string.IsNullOrEmpty(wallpaper.OriginalFileName)
+                ? wallpaper.DisplayName
+                : wallpaper.OriginalFileName,
+            Filter = $"{Strings.DlgImportFilterAll}|*.*",
+            Title = Strings.DlgCopyTitle
+        };
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            await Task.Run(() => File.Copy(wallpaper.ManagedFilePath, dialog.FileName, overwrite: true));
+            ShowToast(Strings.MsgCopySuccess);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Copy failed: {ex.Message}");
+            ShowToast(Strings.MsgCopyFailed, error: true);
+        }
     }
 
     // Keep HasActivePlayback in sync with the playback engine. The event usually
