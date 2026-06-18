@@ -25,7 +25,6 @@
                                     RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                           CommandParameter="{Binding PlacementTarget.DataContext,
                                     RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                <Separator/>
                 <MenuItem Header="{loc:Loc MenuOpenFileLocation}"
                           Command="{Binding PlacementTarget.Commands.OpenFileLocation,
                                     RelativeSource={RelativeSource AncestorType=ContextMenu}}"
@@ -46,7 +45,6 @@
                                     RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                           CommandParameter="{Binding PlacementTarget.DataContext,
                                     RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                <Separator/>
                 <MenuItem Header="{loc:Loc MenuDelete}" Foreground="#F38BA8"
                           Command="{Binding PlacementTarget.Commands.Delete,
                                     RelativeSource={RelativeSource AncestorType=ContextMenu}}"

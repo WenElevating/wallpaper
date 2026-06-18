@@ -139,25 +139,24 @@
             <Setter Property="BorderBrush" Value="{StaticResource BorderBrush}"/>
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="4"/>
+            <Setter Property="Padding" Value="6"/>
+            <Setter Property="MinWidth" Value="220"/>
             <Setter Property="Template">
                 <Setter.Value>
-                        <ControlTemplate TargetType="ContextMenu">
-                            <Border Background="{TemplateBinding Background}"
-                                    BorderBrush="{TemplateBinding BorderBrush}"
-                                    BorderThickness="{TemplateBinding BorderThickness}"
-                                    CornerRadius="8" Padding="{TemplateBinding Padding}">
-                                <Border.Effect>
-                                    <DropShadowEffect Color="#000000" Opacity="0.45" BlurRadius="18" ShadowDepth="3" Direction="270"/>
-                                </Border.Effect>
-                                <!-- ItemsPresenter (not ContentPresenter): ContextMenu derives
-                                     from MenuBase (an ItemsControl), so its children are the
-                                     MenuItems in Items, which only an ItemsPresenter renders.
-                                     A bare ContentPresenter renders single Content (null here),
-                                     which is why the menu collapsed to a small dark square. -->
-                                <ItemsPresenter/>
-                            </Border>
-                        </ControlTemplate>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" Opacity="0.45" BlurRadius="18" ShadowDepth="3" Direction="270"/>
+                            </Border.Effect>
+                            <!-- ItemsPresenter (not ContentPresenter): ContextMenu derives
+                                 from MenuBase (an ItemsControl), so its children are the
+                                 MenuItems in Items, which only an ItemsPresenter renders. -->
+                            <ItemsPresenter/>
+                        </Border>
+                    </ControlTemplate>
                 </Setter.Value>
             </Setter>
         </Style>
@@ -165,12 +164,12 @@
         <Style TargetType="MenuItem">
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-            <Setter Property="Padding" Value="14,7"/>
+            <Setter Property="Padding" Value="16,10"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="MenuItem">
                         <Border x:Name="bd" Background="{TemplateBinding Background}"
-                                CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                CornerRadius="6" Padding="{TemplateBinding Padding}">
                             <ContentPresenter ContentSource="Header" VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
@@ -182,23 +181,6 @@
                                 <Setter Property="Foreground" Value="{StaticResource MutedTextBrush}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- Separator inside the dark ContextMenu (matches the dark theme;
-             the default light separator would clash). -->
-        <Style TargetType="Separator">
-            <Setter Property="Background" Value="{StaticResource BorderBrush}"/>
-            <Setter Property="Margin" Value="8,4"/>
-            <Setter Property="Height" Value="1"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Separator">
-                        <Border Background="{TemplateBinding Background}"
-                                Height="{TemplateBinding Height}"
-                                Margin="{TemplateBinding Margin}"/>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
