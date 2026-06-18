@@ -734,7 +734,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private void OpenFileLocation(WallpaperItem? wallpaper)
     {
         if (wallpaper == null || string.IsNullOrEmpty(wallpaper.ManagedFilePath)) return;
-        try { Process.Start("explorer.exe", $"/select,\"{wallpaper.ManagedFilePath}\""); }
+        try
+        {
+            // Explorer reuses a single process, so the wrapper is usually
+            // already-exited — but it still implements IDisposable, so dispose it.
+            using var proc = Process.Start("explorer.exe", $"/select,\"{wallpaper.ManagedFilePath}\"");
+        }
         catch (Exception ex) { _logger.Warn($"Open file location failed: {ex.Message}"); }
     }
 
