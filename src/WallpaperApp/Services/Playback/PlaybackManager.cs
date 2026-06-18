@@ -75,8 +75,22 @@ public sealed class PlaybackManager : IDisposable, IPlaybackPauseController
     {
         if (_disposed) return false;
 
-        // Stop any existing session for this monitor first.
-        await RemoveWallpaperInternalAsync(monitorId, ct);
+        // F6: build the new session FIRST, then tear down the old one. The old
+        // code removed the existing session before creating the replacement,
+        // which left a gap where no child window covered the desktop WorkerW —
+        // the user briefly saw the underlying static system wallpaper on every
+        // switch. By starting the new session (which only resolves after its
+        // first frame is presented) before disposing the old, the desktop is
+        // never uncovered: the transition is old-frame → new-frame with no
+        // intermediate blank.
+        //
+        // Capture the existing session BY REFERENCE (not via the dictionary key):
+        // once the new session succeeds we overwrite the key, so a subsequent
+        // RemoveWallpaperInternalAsync(monitorId) would dispose the NEW session.
+        // We dispose oldSession directly off the captured reference instead.
+        PlaybackSession? oldSession;
+        lock (_lock)
+            _sessions.TryGetValue(monitorId, out oldSession);
 
         // The session owns the full pipeline (window + renderer + backend) and
         // runs it on a dedicated render thread so the D2D HWND render target
@@ -92,17 +106,47 @@ public sealed class PlaybackManager : IDisposable, IPlaybackPauseController
             _createFallbackBackend,
             _logger);
 
-        var started = await session.StartAsync(ct);
+        bool started;
+        try
+        {
+            // StartAsync resolves only after the first frame renders, so on
+            // success the new window is already visibly covering the desktop.
+            started = await session.StartAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            // Defensive: PlaybackSession.Run swallows its own exceptions and
+            // resolves false, but guard against anything thrown before the
+            // render thread takes over (e.g. thread start). Never let a half-
+            // built session leak; the old session is untouched.
+            _logger.Error($"Exception starting wallpaper playback for monitor {monitorId}: {filePath}", ex);
+            session.Dispose();
+            return false;
+        }
+
         if (!started)
         {
+            // New wallpaper failed to load/render. Dispose just the failed
+            // session and leave the old one in place and playing — the user
+            // keeps seeing the previous wallpaper instead of a blank desktop.
             session.Dispose();
             _logger.Error($"Failed to start wallpaper playback for monitor {monitorId}: {filePath}");
             return false;
         }
 
+        // New session is live and rendering. Swap it into the dictionary,
+        // evicting the old reference, then dispose the old session by reference.
         lock (_lock)
             _sessions[monitorId] = session;
         RaiseSessionsChanged();
+
+        if (oldSession != null)
+        {
+            try { await oldSession.StopAsync(ct); }
+            catch (Exception ex) { _logger.Warn($"Failed to stop previous session on {monitorId}: {ex.Message}"); }
+            try { oldSession.Dispose(); }
+            catch (Exception ex) { _logger.Warn($"Failed to dispose previous session on {monitorId}: {ex.Message}"); }
+        }
 
         _logger.Info($"Wallpaper set on monitor {monitorId}: {Path.GetFileName(filePath)}");
         return true;

@@ -44,6 +44,116 @@ public sealed class PlaybackManagerTests : IDisposable
         Assert.Equal((100, 200, 1600, 900), observed);
     }
 
+    // F6: switching wallpaper on the same monitor must start the new session
+    // BEFORE disposing the old one, so the desktop is never uncovered. These
+    // tests pin that contract: the old session is disposed only after the new
+    // one succeeds, and is KEPT when the new one fails.
+    //
+    // The fakes below are factory-style (fresh instance per create* call) with
+    // disposal tracking, because the original single-instance fakes would alias
+    // across two concurrent sessions and mask exactly the bugs this guards.
+
+    [Fact]
+    public async Task Switch_DisposesOldSession_WhenNewSucceeds()
+    {
+        // Track every backend/renderer/surface we hand out so we can assert on
+        // the first session's disposal after the second switch succeeds.
+        var backends = new List<FakePlaybackBackend>();
+        var renderers = new List<FakeRenderer>();
+        var surfaces = new List<FakeWallpaperSurface>();
+
+        using var desktopHost = new DesktopHost(_logger);
+        using var manager = new PlaybackManager(
+            _logger,
+            desktopHost,
+            createSurface: (_, _, _, _) =>
+            {
+                var s = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+                surfaces.Add(s);
+                return s;
+            },
+            createRenderer: (_, _, _, _) =>
+            {
+                var r = new FakeRenderer(true);
+                renderers.Add(r);
+                return r;
+            },
+            createBackend: () =>
+            {
+                var b = new FakePlaybackBackend(CreateFrame());
+                backends.Add(b);
+                return b;
+            },
+            createFallbackBackend: () => new FakePlaybackBackend());
+
+        var monitorId = Guid.NewGuid();
+        var wp1 = Guid.NewGuid();
+        var wp2 = Guid.NewGuid();
+
+        var ok1 = await manager.SetWallpaperAsync(monitorId, wp1, "a.mp4", 0, 0, 1, 1);
+        Assert.True(ok1);
+        Assert.Equal(wp1, manager.GetActiveWallpaperId(monitorId));
+        Assert.Single(backends);
+        Assert.False(backends[0].IsDisposed);
+
+        var ok2 = await manager.SetWallpaperAsync(monitorId, wp2, "b.mp4", 0, 0, 1, 1);
+
+        Assert.True(ok2);
+        // New session is the active one.
+        Assert.Equal(wp2, manager.GetActiveWallpaperId(monitorId));
+        // Old session's backend/renderer/surface were disposed (by reference).
+        Assert.True(backends[0].IsDisposed);
+        Assert.True(renderers[0].IsDisposed);
+        Assert.True(surfaces[0].IsDisposed);
+        // New session's are alive.
+        Assert.False(backends[1].IsDisposed);
+        Assert.False(renderers[1].IsDisposed);
+    }
+
+    [Fact]
+    public async Task Switch_KeepsOldSession_WhenNewFails()
+    {
+        // First session renders fine; second session's renderer fails to present
+        // the first frame → new session is discarded, old session stays live.
+        var backends = new List<FakePlaybackBackend>();
+        var renderers = new List<FakeRenderer>();
+        var renderResults = new Queue<bool>(new[] { true, false }); // 1st ok, 2nd fails
+
+        using var desktopHost = new DesktopHost(_logger);
+        using var manager = new PlaybackManager(
+            _logger,
+            desktopHost,
+            createSurface: (_, _, _, _) => new FakeWallpaperSurface(new IntPtr(1), 1, 1),
+            createRenderer: (_, _, _, _) =>
+            {
+                var r = new FakeRenderer(renderResults.Dequeue());
+                renderers.Add(r);
+                return r;
+            },
+            createBackend: () =>
+            {
+                var b = new FakePlaybackBackend(CreateFrame());
+                backends.Add(b);
+                return b;
+            },
+            createFallbackBackend: () => new FakePlaybackBackend());
+
+        var monitorId = Guid.NewGuid();
+        var wp1 = Guid.NewGuid();
+        var wp2 = Guid.NewGuid();
+
+        var ok1 = await manager.SetWallpaperAsync(monitorId, wp1, "a.mp4", 0, 0, 1, 1);
+        Assert.True(ok1);
+
+        var ok2 = await manager.SetWallpaperAsync(monitorId, wp2, "broken.mp4", 0, 0, 1, 1);
+
+        // New wallpaper failed → reported false, old wallpaper still active.
+        Assert.False(ok2);
+        Assert.Equal(wp1, manager.GetActiveWallpaperId(monitorId));
+        // Old session's backend untouched.
+        Assert.False(backends[0].IsDisposed);
+    }
+
     public void Dispose()
     {
         _logger.Dispose();
@@ -70,10 +180,9 @@ public sealed class PlaybackManagerTests : IDisposable
         public IntPtr Handle { get; }
         public int Width { get; }
         public int Height { get; }
+        public bool IsDisposed { get; private set; }
 
-        public void Dispose()
-        {
-        }
+        public void Dispose() => IsDisposed = true;
     }
 
     private sealed class FakeRenderer : IFrameRenderer
@@ -85,15 +194,20 @@ public sealed class PlaybackManagerTests : IDisposable
             _result = result;
         }
 
-        public bool Present(FrameData frame) => _result;
+        public bool IsDisposed { get; private set; }
+        public int PresentCalls { get; private set; }
+
+        public bool Present(FrameData frame)
+        {
+            PresentCalls++;
+            return _result;
+        }
 
         public void Resize(int width, int height)
         {
         }
 
-        public void Dispose()
-        {
-        }
+        public void Dispose() => IsDisposed = true;
     }
 
     private sealed class FakePlaybackBackend : IPlaybackBackend
@@ -107,6 +221,7 @@ public sealed class PlaybackManagerTests : IDisposable
 
         public bool IsPlaying { get; private set; }
         public bool IsPaused { get; private set; }
+        public bool IsDisposed { get; private set; }
         public bool IsHardwareDecoding => false;
         public int VideoWidth => 0;
         public int VideoHeight => 0;
@@ -154,6 +269,7 @@ public sealed class PlaybackManagerTests : IDisposable
 
         public void Dispose()
         {
+            IsDisposed = true;
             while (_frames.Count > 0)
             {
                 var frame = _frames.Dequeue();
