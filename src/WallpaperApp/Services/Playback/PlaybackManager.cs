@@ -4,7 +4,7 @@ using WallpaperApp.Services.Logging;
 
 namespace WallpaperApp.Services.Playback;
 
-public sealed class PlaybackManager : IDisposable, IPlaybackPauseController
+public class PlaybackManager : IDisposable, IPlaybackPauseController
 {
     private readonly FileLogger _logger;
     private readonly DesktopHost _desktopHost;
@@ -46,7 +46,7 @@ public sealed class PlaybackManager : IDisposable, IPlaybackPauseController
     // Returns the wallpaper currently shown on the given monitor, or null if no
     // session is active. Used by the tray "shuffle" command to avoid picking the
     // wallpaper that is already on screen.
-    public Guid? GetActiveWallpaperId(Guid monitorId)
+    public virtual Guid? GetActiveWallpaperId(Guid monitorId)
     {
         lock (_lock)
             return _sessions.TryGetValue(monitorId, out var s) ? s.WallpaperId : null;
@@ -63,7 +63,7 @@ public sealed class PlaybackManager : IDisposable, IPlaybackPauseController
 
     private void RaiseSessionsChanged() => SessionsChanged?.Invoke(this, EventArgs.Empty);
 
-    public async Task<bool> SetWallpaperAsync(
+    public virtual async Task<bool> SetWallpaperAsync(
         Guid monitorId,
         Guid wallpaperId,
         string filePath,
@@ -152,7 +152,7 @@ public sealed class PlaybackManager : IDisposable, IPlaybackPauseController
         return true;
     }
 
-    public async Task RemoveWallpaperAsync(Guid monitorId, CancellationToken ct = default)
+    public virtual async Task RemoveWallpaperAsync(Guid monitorId, CancellationToken ct = default)
     {
         await RemoveWallpaperInternalAsync(monitorId, ct);
     }
