@@ -5,6 +5,50 @@
              xmlns:controls="clr-namespace:WallpaperApp.UI.Controls"
              Foreground="{StaticResource TextBrush}"
              Cursor="Hand">
+    <!-- Right-click menu. Attached at the UserControl level (not the inner Border)
+         so ContextMenu.PlacementTarget IS the WallpaperCard, which holds the
+         Commands dependency property. Attaching it to the Border made PlacementTarget
+         the Border — which has no Commands property — so the bindings silently
+         resolved to null and clicks did nothing. -->
+    <UserControl.ContextMenu>
+        <ContextMenu>
+            <MenuItem Header="{loc:Loc MenuSetAsWallpaper}"
+                      Command="{Binding PlacementTarget.Commands.SetAsWallpaper,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+            <MenuItem Header="{loc:Loc MenuOpenDetail}"
+                      Command="{Binding PlacementTarget.Commands.OpenDetail,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+            <MenuItem Header="{loc:Loc MenuOpenFileLocation}"
+                      Command="{Binding PlacementTarget.Commands.OpenFileLocation,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+            <MenuItem Header="{loc:Loc MenuRename}"
+                      Command="{Binding PlacementTarget.Commands.Rename,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+            <MenuItem Header="{loc:Loc MenuAddToPlaylist}"
+                      Command="{Binding PlacementTarget.Commands.AddToPlaylist,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+            <MenuItem Header="{loc:Loc MenuCopyToFolder}"
+                      Command="{Binding PlacementTarget.Commands.CopyToFolder,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+            <MenuItem Header="{loc:Loc MenuDelete}" Foreground="#F38BA8"
+                      Command="{Binding PlacementTarget.Commands.Delete,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      CommandParameter="{Binding PlacementTarget.DataContext,
+                                RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+        </ContextMenu>
+    </UserControl.ContextMenu>
     <!-- Card surface: rounded, shadowed, lifts on hover, accent ring on hover. -->
     <Border x:Name="Card" CornerRadius="14" ClipToBounds="True"
             Background="{StaticResource CardSurfaceBrush}"
@@ -13,45 +57,6 @@
             MouseEnter="Card_MouseEnter" MouseLeave="Card_MouseLeave"
             MouseLeftButtonUp="Card_Click"
             RenderTransformOrigin="0.5,0.5">
-        <Border.ContextMenu>
-            <ContextMenu>
-                <MenuItem Header="{loc:Loc MenuSetAsWallpaper}"
-                          Command="{Binding PlacementTarget.Commands.SetAsWallpaper,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                          CommandParameter="{Binding PlacementTarget.DataContext,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                <MenuItem Header="{loc:Loc MenuOpenDetail}"
-                          Command="{Binding PlacementTarget.Commands.OpenDetail,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                          CommandParameter="{Binding PlacementTarget.DataContext,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                <MenuItem Header="{loc:Loc MenuOpenFileLocation}"
-                          Command="{Binding PlacementTarget.Commands.OpenFileLocation,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                          CommandParameter="{Binding PlacementTarget.DataContext,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                <MenuItem Header="{loc:Loc MenuRename}"
-                          Command="{Binding PlacementTarget.Commands.Rename,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                          CommandParameter="{Binding PlacementTarget.DataContext,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                <MenuItem Header="{loc:Loc MenuAddToPlaylist}"
-                          Command="{Binding PlacementTarget.Commands.AddToPlaylist,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                          CommandParameter="{Binding PlacementTarget.DataContext,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                <MenuItem Header="{loc:Loc MenuCopyToFolder}"
-                          Command="{Binding PlacementTarget.Commands.CopyToFolder,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                          CommandParameter="{Binding PlacementTarget.DataContext,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-                <MenuItem Header="{loc:Loc MenuDelete}" Foreground="#F38BA8"
-                          Command="{Binding PlacementTarget.Commands.Delete,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                          CommandParameter="{Binding PlacementTarget.DataContext,
-                                    RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
-            </ContextMenu>
-        </Border.ContextMenu>
         <Border.RenderTransform>
             <TranslateTransform x:Name="LiftTt" Y="0"/>
         </Border.RenderTransform>
