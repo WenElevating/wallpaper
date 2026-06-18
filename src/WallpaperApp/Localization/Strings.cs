@@ -101,4 +101,12 @@ internal static class Strings
     public static string MsgCopySuccess => Get(nameof(MsgCopySuccess));
     public static string MsgCopyFailed => Get(nameof(MsgCopyFailed));
     public static string MsgNameEmpty => Get(nameof(MsgNameEmpty));
+    public static string SettingsStorageLocation => Get(nameof(SettingsStorageLocation));
+    public static string SettingsStorageChange => Get(nameof(SettingsStorageChange));
+    public static string SettingsStorageHint => Get(nameof(SettingsStorageHint));
+    public static string DlgPickLibraryFolder => Get(nameof(DlgPickLibraryFolder));
+    public static string MsgLibraryMigrated => Get(nameof(MsgLibraryMigrated));
+    public static string MsgLibraryMigratePartial => Get(nameof(MsgLibraryMigratePartial));
+    public static string MsgLibraryMigrateFailed => Get(nameof(MsgLibraryMigrateFailed));
+    public static string MsgLibrarySamePath => Get(nameof(MsgLibrarySamePath));
 }

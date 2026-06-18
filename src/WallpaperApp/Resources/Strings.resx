@@ -280,4 +280,28 @@
   <data name="MsgNameEmpty" xml:space="preserve">
     <value>Name cannot be empty</value>
   </data>
+  <data name="SettingsStorageLocation" xml:space="preserve">
+    <value>Storage location</value>
+  </data>
+  <data name="SettingsStorageChange" xml:space="preserve">
+    <value>Change…</value>
+  </data>
+  <data name="SettingsStorageHint" xml:space="preserve">
+    <value>Where wallpaper videos and posters are stored. Existing files are moved when you change this.</value>
+  </data>
+  <data name="DlgPickLibraryFolder" xml:space="preserve">
+    <value>Choose wallpaper storage folder</value>
+  </data>
+  <data name="MsgLibraryMigrated" xml:space="preserve">
+    <value>Migrated {0} wallpaper(s){1}</value>
+  </data>
+  <data name="MsgLibraryMigratePartial" xml:space="preserve">
+    <value>, {0} failed</value>
+  </data>
+  <data name="MsgLibraryMigrateFailed" xml:space="preserve">
+    <value>Migration failed: {0}</value>
+  </data>
+  <data name="MsgLibrarySamePath" xml:space="preserve">
+    <value>That's already the current storage location</value>
+  </data>
 </root>

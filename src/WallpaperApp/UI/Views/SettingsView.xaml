@@ -81,6 +81,30 @@
                             Padding="12,4" Click="ResetHotkeyButton_Click"/>
                 </Grid>
             </Border>
+
+            <Border Background="{StaticResource CardSurfaceBrush}"
+                    BorderBrush="{StaticResource CardBorderBrush}" BorderThickness="1"
+                    CornerRadius="10" Padding="16,13" Margin="0,12,0,0">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="{loc:Loc SettingsStorageLocation}" FontSize="14"/>
+                        <TextBlock Text="{Binding LibraryRootDisplay}"
+                                   Foreground="{StaticResource MutedTextBrush}" FontSize="12"
+                                   Margin="0,2,0,0" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock Text="{loc:Loc SettingsStorageHint}"
+                                   Foreground="{StaticResource MutedTextBrush}" FontSize="11"
+                                   Margin="0,4,0,0" Opacity="0.7" TextWrapping="Wrap" MaxWidth="380"/>
+                    </StackPanel>
+                    <Button Grid.Column="1" VerticalAlignment="Center"
+                            Content="{loc:Loc SettingsStorageChange}"
+                            Command="{Binding ChangeLibraryRootCommand}"
+                            Padding="12,4"/>
+                </Grid>
+            </Border>
         </StackPanel>
     </ScrollViewer>
 </UserControl>

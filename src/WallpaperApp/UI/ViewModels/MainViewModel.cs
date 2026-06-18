@@ -68,6 +68,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public ICommand MovePlaylistMemberUpCommand { get; }
     public ICommand MovePlaylistMemberDownCommand { get; }
     public ICommand AssignPlaylistMonitorCommand { get; }
+    public ICommand ChangeLibraryRootCommand { get; }
 
     // Aggregate of the 7 wallpaper-card context-menu commands, bound down to each
     // WallpaperCard via its Commands dependency property.
@@ -239,6 +240,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public AppSettings Settings { get; private set; } = new();
 
+    // Display-only resolved library root (empty => default AppData location).
+    private string _libraryRoot = "";
+    public string LibraryRootDisplay
+    {
+        get => _libraryRoot;
+        private set { if (_libraryRoot != value) { _libraryRoot = value; OnPropertyChanged(); } }
+    }
+
     public MainViewModel(
         LibraryService library,
         PlaybackManager playback,
@@ -290,6 +299,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         MovePlaylistMemberUpCommand = new RelayCommand(async p => await MovePlaylistMemberAsync(p, -1), p => CanMovePlaylistMember(p, -1));
         MovePlaylistMemberDownCommand = new RelayCommand(async p => await MovePlaylistMemberAsync(p, 1), p => CanMovePlaylistMember(p, 1));
         AssignPlaylistMonitorCommand = new RelayCommand(async _ => await AssignPlaylistMonitorAsync(), _ => _selectedPlaylist != null);
+        ChangeLibraryRootCommand = new RelayCommand(_ => _ = ChangeLibraryRootAsync());
 
         Commands = new WallpaperCommands
         {
@@ -325,6 +335,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public async Task LoadAsync(CancellationToken ct = default)
     {
         Settings = await _settings.LoadAsync();
+        LibraryRootDisplay = string.IsNullOrEmpty(Settings.LibraryRoot)
+            ? LibraryService.DefaultLibraryDir()
+            : Settings.LibraryRoot;
         _monitors.Refresh();
         Monitors.Clear();
         foreach (var m in _monitors.Monitors.Values)
@@ -866,6 +879,86 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             _logger.Warn($"Copy failed: {ex.Message}");
             ShowToast(Strings.MsgCopyFailed, error: true);
+        }
+    }
+
+    // Change the wallpaper storage root. Opens a folder picker, validates the
+    // target is writable, pauses playback (so decoders release file handles),
+    // migrates all files, then switches the active dirs and persists the setting.
+    private async Task ChangeLibraryRootAsync()
+    {
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = Strings.DlgPickLibraryFolder,
+            UseDescriptionForTitle = true,
+            ShowNewFolderButton = true
+        };
+        if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+
+        var newRoot = dialog.SelectedPath;
+        if (string.IsNullOrWhiteSpace(newRoot)) return;
+
+        // No-op if same as current effective root.
+        var currentEffective = string.IsNullOrEmpty(Settings.LibraryRoot)
+            ? LibraryService.DefaultLibraryDir()
+            : Settings.LibraryRoot;
+        if (string.Equals(newRoot, currentEffective, StringComparison.OrdinalIgnoreCase))
+        {
+            ShowToast(Strings.MsgLibrarySamePath, error: true);
+            return;
+        }
+
+        // Validate the target is writable before committing to a migration.
+        try
+        {
+            Directory.CreateDirectory(newRoot);
+            var probe = Path.Combine(newRoot, ".wallpaperapp_write_probe");
+            await File.WriteAllTextAsync(probe, "");
+            File.Delete(probe);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Library root not writable: {ex.Message}");
+            ShowToast(string.Format(Strings.MsgLibraryMigrateFailed, ex.Message), error: true);
+            return;
+        }
+
+        // Pause playback so the decoder releases the source files (otherwise copy
+        // fails on Windows with a sharing violation). Resume after, regardless.
+        await PauseAllAsync();
+        try
+        {
+            var (success, failed) = await _library.MigrateToAsync(newRoot);
+
+            // Switch active dirs + poster cache to the new root.
+            _library.UseRoot(newRoot);
+            PosterCache.SetCacheRoot(newRoot);
+
+            // Persist and refresh the display + in-memory wallpaper paths.
+            Settings = Settings with { LibraryRoot = newRoot };
+            LibraryRootDisplay = newRoot;
+            try { await _settings.SaveAsync(Settings); }
+            catch (Exception ex) { _logger.Warn($"Failed to save LibraryRoot: {ex.Message}"); }
+
+            // Update in-memory paths so cards/posters resolve from the new location.
+            foreach (var w in Wallpapers)
+            {
+                w.ManagedFilePath = Path.Combine(LibraryService.ResolveLibraryDir(newRoot), Path.GetFileName(w.ManagedFilePath));
+                if (!string.IsNullOrEmpty(w.ThumbnailPath))
+                    w.ThumbnailPath = Path.Combine(LibraryService.ResolvePosterDir(newRoot), Path.GetFileName(w.ThumbnailPath));
+            }
+
+            var partial = failed > 0 ? string.Format(Strings.MsgLibraryMigratePartial, failed) : "";
+            ShowToast(string.Format(Strings.MsgLibraryMigrated, success, partial), error: false);
+        }
+        catch (Exception ex)
+        {
+            _logger.Error($"Library migration failed: {ex.Message}", ex);
+            ShowToast(string.Format(Strings.MsgLibraryMigrateFailed, ex.Message), error: true);
+        }
+        finally
+        {
+            await ResumeAllAsync();
         }
     }
 
