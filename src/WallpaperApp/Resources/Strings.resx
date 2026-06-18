@@ -250,6 +250,9 @@
   <data name="DlgRenameTitle" xml:space="preserve">
     <value>Rename wallpaper</value>
   </data>
+  <data name="DlgRenamePrompt" xml:space="preserve">
+    <value>New name</value>
+  </data>
   <data name="DlgPickPlaylistTitle" xml:space="preserve">
     <value>Add to playlist</value>
   </data>

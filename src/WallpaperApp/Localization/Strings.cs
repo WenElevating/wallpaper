@@ -91,6 +91,7 @@ internal static class Strings
     public static string DlgDeletePlaylistRefs => Get(nameof(DlgDeletePlaylistRefs));
     public static string DlgDeleteConfirm => Get(nameof(DlgDeleteConfirm));
     public static string DlgRenameTitle => Get(nameof(DlgRenameTitle));
+    public static string DlgRenamePrompt => Get(nameof(DlgRenamePrompt));
     public static string DlgPickPlaylistTitle => Get(nameof(DlgPickPlaylistTitle));
     public static string DlgPlaylistEmpty => Get(nameof(DlgPlaylistEmpty));
     public static string DlgCopyTitle => Get(nameof(DlgCopyTitle));

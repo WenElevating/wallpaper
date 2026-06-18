@@ -250,6 +250,9 @@
   <data name="DlgRenameTitle" xml:space="preserve">
     <value>重命名壁纸</value>
   </data>
+  <data name="DlgRenamePrompt" xml:space="preserve">
+    <value>新名称</value>
+  </data>
   <data name="DlgPickPlaylistTitle" xml:space="preserve">
     <value>加入播放列表</value>
   </data>
