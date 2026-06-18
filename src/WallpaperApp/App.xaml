@@ -133,6 +133,70 @@
             </Setter>
         </Style>
 
+        <!-- ===== Dark CheckBox (toggles in Settings) =====
+             The default Windows checkbox is a stark white box; this re-skins it
+             with the theme palette: surface fill, accent gradient when checked,
+             a hand-drawn check mark, and rounded corners. -->
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <BulletDecorator Background="Transparent">
+                            <BulletDecorator.Bullet>
+                                <Border x:Name="box"
+                                        Width="20" Height="20"
+                                        CornerRadius="5"
+                                        BorderThickness="2"
+                                        BorderBrush="{StaticResource BorderBrush}"
+                                        Background="{StaticResource SurfaceBrush}">
+                                    <Path x:Name="check"
+                                          Stretch="Uniform"
+                                          Margin="3,4,3,3"
+                                          Data="M 0 5 L 4 9 L 10 0"
+                                          Stroke="#0B0B14" StrokeThickness="2"
+                                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                          StrokeLineJoin="Round"
+                                          Opacity="0"/>
+                                </Border>
+                            </BulletDecorator.Bullet>
+                            <ContentPresenter Margin="10,0,0,0"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"/>
+                        </BulletDecorator>
+                        <ControlTemplate.Triggers>
+                            <!-- Checked: accent gradient fill + reveal the check mark. -->
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="box" Property="BorderBrush" Value="#89B4FA"/>
+                                <Setter TargetName="box" Property="Background">
+                                    <Setter.Value>
+                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                            <GradientStop Color="#89B4FA" Offset="0"/>
+                                            <GradientStop Color="#B4BEFE" Offset="1"/>
+                                        </LinearGradientBrush>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter TargetName="check" Property="Opacity" Value="1"/>
+                            </Trigger>
+                            <!-- Hover (unchecked): lift the border toward accent. -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True"/>
+                                    <Condition Property="IsChecked" Value="False"/>
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="box" Property="BorderBrush" Value="{StaticResource AccentBrush2}"/>
+                            </MultiTrigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- ===== Dark ContextMenu (card right-click menu) ===== -->
         <Style TargetType="ContextMenu">
             <Setter Property="Background" Value="{StaticResource SurfaceBrush}"/>
