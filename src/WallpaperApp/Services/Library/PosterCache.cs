@@ -17,9 +17,21 @@ namespace WallpaperApp.Services.Library;
 // library cards can show a static poster and only spin up live playback on hover.
 public static class PosterCache
 {
-    private static readonly string CacheDir = Path.Combine(
+    // Default poster cache dir; overridable at startup via SetCacheRoot so a
+    // custom LibraryRoot keeps posters next to the videos.
+    private static string CacheDir { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "WallpaperApp", "posters");
+
+    // Switch the poster cache directory at runtime (used at startup to apply the
+    // configured LibraryRoot, and after a migration).
+    public static void SetCacheRoot(string? root)
+    {
+        CacheDir = string.IsNullOrWhiteSpace(root)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "WallpaperApp", "posters")
+            : Path.Combine(root, "posters");
+    }
 
     private static readonly SemaphoreSlim Gate = new(1, 1);
 

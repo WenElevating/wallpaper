@@ -19,4 +19,7 @@ public record AppSettings
     public HotkeyBindings Hotkeys { get; init; } = new();
     /// <summary>UI language code ("zh-CN", "en"); empty = follow the OS UI language.</summary>
     public string Language { get; init; } = "";
+    /// <summary>Library storage root. Empty = default (LocalAppData/WallpaperApp).
+    /// Videos go in <root>/library, posters in <root>/posters.</summary>
+    public string LibraryRoot { get; init; } = "";
 }

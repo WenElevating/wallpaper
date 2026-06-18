@@ -85,6 +85,16 @@ public partial class App : Application
             var settings = _serviceProvider.GetRequiredService<SettingsService>();
             var appSettings = await settings.LoadAsync();
 
+            // Apply the configured library storage root before anything resolves
+            // the LibraryService or generates posters. Empty LibraryRoot = default
+            // (LocalAppData/WallpaperApp). Done here (after settings load, before
+            // MainViewModel.LoadAsync imports/reads anything) so the right paths
+            // are active from the very first wallpaper operation.
+            var libraryService = _serviceProvider.GetRequiredService<LibraryService>();
+            libraryService.UseRoot(appSettings.LibraryRoot);
+            PosterCache.SetCacheRoot(appSettings.LibraryRoot);
+            logger.Info($"Library root: {(string.IsNullOrEmpty(appSettings.LibraryRoot) ? "<default>" : appSettings.LibraryRoot)}");
+
             // Apply the UI language BEFORE any window is created so the first
             // render and all {loc:Loc} bindings start in the right culture.
             LocalizationService.ApplyCulture(appSettings.Language);
