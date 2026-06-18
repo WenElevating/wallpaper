@@ -24,6 +24,17 @@ public partial class WallpaperCard : UserControl
         set => SetValue(OpenCommandProperty, value);
     }
 
+    // Aggregate of context-menu commands, bound from MainViewModel. Each MenuItem
+    // in the ContextMenu binds PlacementTarget.Commands.Xxx to reach these.
+    public static readonly DependencyProperty CommandsProperty = DependencyProperty.Register(
+        nameof(Commands), typeof(WallpaperCommands), typeof(WallpaperCard), new PropertyMetadata(null));
+
+    public WallpaperCommands? Commands
+    {
+        get => (WallpaperCommands?)GetValue(CommandsProperty);
+        set => SetValue(CommandsProperty, value);
+    }
+
     private string? _managedPath;
     private bool _isPlaying;
 
