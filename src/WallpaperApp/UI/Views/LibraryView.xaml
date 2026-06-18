@@ -44,7 +44,8 @@
             <ListBox.ItemTemplate>
                 <DataTemplate>
                     <controls:WallpaperCard Margin="10"
-                        OpenCommand="{Binding DataContext.OpenDetailCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
+                        OpenCommand="{Binding DataContext.OpenDetailCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                        Commands="{Binding DataContext.Commands, RelativeSource={RelativeSource AncestorType=ItemsControl}}"/>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
