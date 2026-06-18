@@ -108,6 +108,21 @@ public sealed class LibraryService
         await db.SaveChangesAsync(ct);
     }
 
+    public async Task<bool> RenameAsync(Guid id, string newName, CancellationToken ct = default)
+    {
+        var trimmed = newName?.Trim();
+        if (string.IsNullOrEmpty(trimmed)) return false;
+
+        await using var db = CreateDbContext();
+        var item = await db.WallpaperItems.FindAsync(new object[] { id }, ct);
+        if (item == null) return false;
+
+        item.DisplayName = trimmed;
+        await db.SaveChangesAsync(ct);
+        _logger.Info($"Renamed wallpaper {id} -> '{trimmed}'");
+        return true;
+    }
+
     public async Task<bool> DeleteAsync(Guid id, CancellationToken ct = default)
     {
         await using var db = CreateDbContext();

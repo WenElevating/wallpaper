@@ -42,9 +42,13 @@ public class LibraryServiceTests : IDisposable
 
     private LibraryService CreateService()
     {
-        var ctx = CreateContext();
+        // Register the context as Transient (factory) so each LibraryService method
+        // — which uses `await using var db = CreateDbContext()` and disposes it —
+        // gets a fresh context over the shared in-memory SQLite connection. A
+        // Singleton registration (the trap) would let the first method's Dispose
+        // invalidate the instance for every subsequent call in the same test.
         var services = new ServiceCollection();
-        services.AddSingleton(ctx);
+        services.AddTransient(_ => CreateContext());
         var sp = services.BuildServiceProvider();
         var logger = new FileLogger(Path.Combine(Path.GetTempPath(), "WallpaperAppTestLogs_" + Guid.NewGuid().ToString("N")[..8]));
         return new LibraryService(logger, sp, _testLibDir);
@@ -97,6 +101,48 @@ public class LibraryServiceTests : IDisposable
     {
         var service = CreateService();
         var result = await service.DeleteAsync(Guid.NewGuid());
+        Assert.False(result);
+    }
+
+    private async Task<WallpaperItem> SeedWallpaperAsync(LibraryService service, string name)
+    {
+        var tempFile = Path.Combine(_testLibDir, name + ".mp4");
+        await File.WriteAllBytesAsync(tempFile, new byte[] { 0x00 });
+        return (await service.ImportAsync(tempFile))!;
+    }
+
+    [Fact]
+    public async Task RenameAsync_UpdatesDisplayName()
+    {
+        var service = CreateService();
+        var item = await SeedWallpaperAsync(service, "clip");
+
+        var result = await service.RenameAsync(item.Id, "renamed clip");
+
+        Assert.True(result);
+        var refreshed = await service.GetByIdAsync(item.Id);
+        Assert.Equal("renamed clip", refreshed!.DisplayName);
+    }
+
+    [Fact]
+    public async Task RenameAsync_EmptyName_ReturnsFalseAndKeepsOriginal()
+    {
+        var service = CreateService();
+        var item = await SeedWallpaperAsync(service, "clip");
+        var original = item.DisplayName;
+
+        var result = await service.RenameAsync(item.Id, "   ");
+
+        Assert.False(result);
+        var refreshed = await service.GetByIdAsync(item.Id);
+        Assert.Equal(original, refreshed!.DisplayName);
+    }
+
+    [Fact]
+    public async Task RenameAsync_NonexistentId_ReturnsFalse()
+    {
+        var service = CreateService();
+        var result = await service.RenameAsync(Guid.NewGuid(), "anything");
         Assert.False(result);
     }
 }
