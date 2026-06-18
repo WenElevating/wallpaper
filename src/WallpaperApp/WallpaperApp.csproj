@@ -6,8 +6,18 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
+
+  <!-- UseWindowsForms adds System.Windows.Forms to implicit usings, which clashes
+       with WPF's UserControl/Application/MouseEventArgs across the codebase.
+       Remove it from the global usings so WPF code stays unambiguous; we fully
+       qualify System.Windows.Forms.FolderBrowserDialog at the one call site. -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.*" />
