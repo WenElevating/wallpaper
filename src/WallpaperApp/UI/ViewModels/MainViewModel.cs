@@ -32,6 +32,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly FileLogger _logger;
     private readonly GlobalHotkeyService _hotkeys;
     private readonly PlaylistService _playlistService;
+    private readonly RandomWallpaperSwitcher _shuffler;
     // Coordinator is attached after construction (its switcher needs this ViewModel
     // instance, creating a cycle; App.xaml.cs calls AttachPlaylistCoordinator).
     private PlaylistCoordinator? _playlists;
@@ -236,7 +237,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         SettingsService settings,
         FileLogger logger,
         GlobalHotkeyService hotkeys,
-        PlaylistService playlistService)
+        PlaylistService playlistService,
+        RandomWallpaperSwitcher shuffler)
     {
         _library = library;
         _playback = playback;
@@ -245,6 +247,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _logger = logger;
         _hotkeys = hotkeys;
         _playlistService = playlistService;
+        _shuffler = shuffler;
 
         WallpapersView = CollectionViewSource.GetDefaultView(Wallpapers);
         WallpapersView.Filter = FilterWallpaper;
@@ -517,6 +520,58 @@ public sealed class MainViewModel : INotifyPropertyChanged
         var wallpaper = Wallpapers.FirstOrDefault(w => w.Id == wallpaperId);
         if (wallpaper == null) return false;
         return await AssignWallpaperAsync(monitor, wallpaper);
+    }
+
+    // Tray "Shuffle wallpaper" command. For each monitor:
+    //   - if a playlist is bound, advance THAT playlist (don't bypass F1's
+    //     rotation contract — the user explicitly set up an order/shuffle for
+    //     it; we just trigger an early "next");
+    //   - otherwise pick a random wallpaper that isn't the current one and
+    //     isn't in the recent-history window for this monitor.
+    // Surfaces a single toast summarising success across all monitors so a
+    // multi-monitor shuffle doesn't spam.
+    public async Task ShuffleAllMonitorsAsync(CancellationToken ct = default)
+    {
+        if (Wallpapers.Count == 0)
+        {
+            ShowToast(Strings.MsgShuffleNoLibrary, error: true);
+            return;
+        }
+
+        _monitors.Refresh();
+        var monitors = _monitors.Monitors.Values.ToList();
+        if (monitors.Count == 0) return;
+
+        var libraryIds = Wallpapers.Select(w => w.Id).ToList();
+        int success = 0;
+        foreach (var m in monitors)
+        {
+            // F1 coexistence: if this monitor is bound to a playlist, treat
+            // "shuffle" as "skip to next in that playlist" instead of yanking
+            // the wallpaper out from under the runner.
+            if (_playlists != null)
+            {
+                var bound = await _playlistService.GetPlaylistForMonitorAsync(m.MonitorKey, ct);
+                if (bound != null && bound.Members.Count > 0)
+                {
+                    await _playlists.SkipNextAsync(m.MonitorKey);
+                    success++;
+                    continue;
+                }
+            }
+
+            Guid? current = null;
+            try { current = _playback.GetActiveWallpaperId(Guid.Parse(m.MonitorKey)); }
+            catch (FormatException) { /* MonitorKey isn't a Guid on this monitor; treat as "no current" */ }
+
+            var pickId = _shuffler.PickNext(m.MonitorKey, current, libraryIds);
+            if (pickId is not Guid id) continue;
+            var item = Wallpapers.FirstOrDefault(w => w.Id == id);
+            if (item == null) continue;
+            if (await AssignWallpaperAsync(m, item, ct)) success++;
+        }
+
+        ShowToast(success > 0 ? Strings.MsgShuffleDone : Strings.MsgSetFailedShort, error: success == 0);
     }
 
     private async Task CreatePlaylistAsync()

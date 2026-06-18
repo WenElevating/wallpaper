@@ -37,6 +37,7 @@ public sealed class TrayIcon : IDisposable
     private const uint CmdExit = 1004;
     private const uint CmdLangZh = 1005;
     private const uint CmdLangEn = 1006;
+    private const uint CmdShuffle = 1007;
 
     private static readonly object ClassRegisterLock = new();
     private static bool _classRegistered;
@@ -191,6 +192,11 @@ public sealed class TrayIcon : IDisposable
         NativeMethods.AppendMenuW(menu, NativeMethods.MF_SEPARATOR, 0, null);
         NativeMethods.AppendMenuW(menu, NativeMethods.MF_STRING | NativeMethods.MF_ENABLED, CmdPause, Strings.PauseAllText);
         NativeMethods.AppendMenuW(menu, NativeMethods.MF_STRING | NativeMethods.MF_ENABLED, CmdResume, Strings.ResumeAllText);
+        // F5: shuffle to a random wallpaper that isn't the current one (nor in the
+        // recent-history window). Grayed out when the library is empty.
+        var shuffleFlags = NativeMethods.MF_STRING |
+            (_viewModel.Wallpapers.Count > 0 ? NativeMethods.MF_ENABLED : NativeMethods.MF_GRAYED);
+        NativeMethods.AppendMenuW(menu, shuffleFlags, CmdShuffle, Strings.MenuShuffleWallpaper);
         NativeMethods.AppendMenuW(menu, NativeMethods.MF_SEPARATOR, 0, null);
 
         // Language submenu (中文 / English), with a checkmark on the active one.
@@ -228,6 +234,7 @@ public sealed class TrayIcon : IDisposable
             case (int)CmdOpen: Dispatch(ShowMainWindow); break;
             case (int)CmdPause: Dispatch(() => _ = _viewModel.PauseAllAsync()); break;
             case (int)CmdResume: Dispatch(() => _ = _viewModel.ResumeAllAsync()); break;
+            case (int)CmdShuffle: Dispatch(() => _ = _viewModel.ShuffleAllMonitorsAsync()); break;
             case (int)CmdLangZh: Dispatch(() => _ = _viewModel.SetLanguageAsync(LocalizationService.Chinese)); break;
             case (int)CmdLangEn: Dispatch(() => _ = _viewModel.SetLanguageAsync(LocalizationService.English)); break;
             case (int)CmdExit: Dispatch(ExitApplication); break;

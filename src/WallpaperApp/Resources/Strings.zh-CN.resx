@@ -199,4 +199,13 @@
   <data name="MsgSetFailedShort" xml:space="preserve">
     <value>设置壁纸失败</value>
   </data>
+  <data name="MenuShuffleWallpaper" xml:space="preserve">
+    <value>随机切换壁纸</value>
+  </data>
+  <data name="MsgShuffleDone" xml:space="preserve">
+    <value>已随机切换壁纸</value>
+  </data>
+  <data name="MsgShuffleNoLibrary" xml:space="preserve">
+    <value>壁纸库为空</value>
+  </data>
 </root>

@@ -18,7 +18,7 @@
 - **Remote-session aware** — Automatically pauses wallpapers during Remote Desktop (RDP) or screen-cast (Miracast) sessions to save bandwidth.
 - **Global hotkeys** — Toggle pause with a configurable global hotkey (default `Ctrl+Alt+W`), no need to open the window.
 - **Playlist rotation** — Group wallpapers into a playlist and auto-rotate them on a fixed interval per monitor.
-- **System tray** — Minimize-to-tray with a quick-pause context menu and language switching.
+- **System tray** — Minimize-to-tray with quick-pause, on-demand random shuffle (avoids recently-shown wallpapers), and language switching from the right-click menu.
 - **Library management** — Browse, search, and sort imported wallpapers with thumbnail previews.
 - **Internationalization** — UI available in English and 中文 (Chinese), switchable at runtime.
 - **Auto-start** — Optional launch with Windows.

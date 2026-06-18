@@ -34,6 +34,7 @@ public sealed class PlaybackSession : IDisposable
 {
     private readonly FileLogger _logger;
     private readonly Guid _monitorId;
+    private readonly Guid _wallpaperId;
     private readonly string _filePath;
     private readonly int _x, _y, _width, _height;
     private readonly Func<int, int, int, int, IWallpaperSurface?> _createSurface;
@@ -59,11 +60,13 @@ public sealed class PlaybackSession : IDisposable
     private IntPtr _hwnd;
 
     public Guid MonitorId => _monitorId;
+    public Guid WallpaperId => _wallpaperId;
     public bool IsPlaying => _backend?.IsPlaying ?? false;
     public bool IsPaused => _backend?.IsPaused ?? false;
 
     public PlaybackSession(
         Guid monitorId,
+        Guid wallpaperId,
         string filePath,
         int x, int y, int width, int height,
         Func<int, int, int, int, IWallpaperSurface?> createSurface,
@@ -73,6 +76,7 @@ public sealed class PlaybackSession : IDisposable
         FileLogger logger)
     {
         _monitorId = monitorId;
+        _wallpaperId = wallpaperId;
         _filePath = filePath;
         _x = x;
         _y = y;

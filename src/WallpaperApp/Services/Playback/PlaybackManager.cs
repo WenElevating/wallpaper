@@ -43,6 +43,15 @@ public sealed class PlaybackManager : IDisposable, IPlaybackPauseController
             return _sessions.TryGetValue(monitorId, out var s) && s.IsPlaying;
     }
 
+    // Returns the wallpaper currently shown on the given monitor, or null if no
+    // session is active. Used by the tray "shuffle" command to avoid picking the
+    // wallpaper that is already on screen.
+    public Guid? GetActiveWallpaperId(Guid monitorId)
+    {
+        lock (_lock)
+            return _sessions.TryGetValue(monitorId, out var s) ? s.WallpaperId : null;
+    }
+
     // True when at least one wallpaper session is active (drives the pause
     // button's enabled state in the UI).
     public bool HasActiveSessions
@@ -74,6 +83,7 @@ public sealed class PlaybackManager : IDisposable, IPlaybackPauseController
         // shares one thread with its window.
         var session = new PlaybackSession(
             monitorId,
+            wallpaperId,
             filePath,
             monitorX, monitorY, monitorWidth, monitorHeight,
             _createSurface,

@@ -74,4 +74,7 @@ internal static class Strings
     public static string MsgSetSuccessDesktop => Get(nameof(MsgSetSuccessDesktop));
     public static string MsgSetSuccessAll => Get(nameof(MsgSetSuccessAll));
     public static string MsgSetFailedShort => Get(nameof(MsgSetFailedShort));
+    public static string MenuShuffleWallpaper => Get(nameof(MenuShuffleWallpaper));
+    public static string MsgShuffleDone => Get(nameof(MsgShuffleDone));
+    public static string MsgShuffleNoLibrary => Get(nameof(MsgShuffleNoLibrary));
 }

@@ -23,7 +23,7 @@ public sealed class PlaybackSessionTests : IDisposable
         using var renderer = new FakeRenderer(false);
         using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
         using var session = new PlaybackSession(
-            Guid.NewGuid(), "fake.mp4", 0, 0, 1, 1,
+            Guid.NewGuid(), Guid.NewGuid(), "fake.mp4", 0, 0, 1, 1,
             (_, _, _, _) => surface,
             (_, _, _, _) => renderer,
             () => backend,
@@ -43,7 +43,7 @@ public sealed class PlaybackSessionTests : IDisposable
         using var renderer = new FakeRenderer(true);
         using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
         using var session = new PlaybackSession(
-            Guid.NewGuid(), "fake.mp4", 0, 0, 1, 1,
+            Guid.NewGuid(), Guid.NewGuid(), "fake.mp4", 0, 0, 1, 1,
             (_, _, _, _) => surface,
             (_, _, _, _) => renderer,
             () => backend,
@@ -131,7 +131,7 @@ public sealed class PlaybackSessionTests : IDisposable
         var renderer = new FakeRenderer(true);
         var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
         var session = new PlaybackSession(
-            Guid.NewGuid(), "fake.mp4", 0, 0, 1, 1,
+            Guid.NewGuid(), Guid.NewGuid(), "fake.mp4", 0, 0, 1, 1,
             (_, _, _, _) => surface,
             (_, _, _, _) => renderer,
             () => backend,

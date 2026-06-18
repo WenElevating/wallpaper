@@ -199,4 +199,13 @@
   <data name="MsgSetFailedShort" xml:space="preserve">
     <value>Failed to set wallpaper</value>
   </data>
+  <data name="MenuShuffleWallpaper" xml:space="preserve">
+    <value>Shuffle wallpaper</value>
+  </data>
+  <data name="MsgShuffleDone" xml:space="preserve">
+    <value>Wallpaper shuffled</value>
+  </data>
+  <data name="MsgShuffleNoLibrary" xml:space="preserve">
+    <value>No wallpapers in library</value>
+  </data>
 </root>

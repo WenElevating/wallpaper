@@ -209,6 +209,10 @@ public partial class App : Application
         services.AddSingleton<FullscreenDetector>();
         services.AddSingleton<WallpaperVisibilityDetector>();
         services.AddSingleton<GlobalHotkeyService>();
+        // F5: random wallpaper switcher used by the tray "Shuffle" menu item.
+        // Singleton because its per-monitor recent-history is the whole feature —
+        // every shuffle goes through the same instance to actually accumulate.
+        services.AddSingleton<RandomWallpaperSwitcher>();
         services.AddSingleton<MainViewModel>();
     }
 
