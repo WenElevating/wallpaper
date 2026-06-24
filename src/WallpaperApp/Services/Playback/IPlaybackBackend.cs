@@ -9,6 +9,7 @@ public interface IPlaybackBackend : IDisposable
     int VideoHeight { get; }
     TimeSpan Duration { get; }
     TimeSpan Position { get; }
+    void UpdatePerformancePolicy(PlaybackPerformancePolicy policy);
     Task<bool> OpenAsync(string filePath, CancellationToken ct = default);
     Task PlayAsync(CancellationToken ct = default);
     Task PauseAsync(CancellationToken ct = default);

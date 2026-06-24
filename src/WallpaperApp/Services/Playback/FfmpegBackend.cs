@@ -55,6 +55,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
     private bool _decodedHw;
     public bool IsHardwareDecoding => _decodedHw;
     private bool _warnedSwFallback;
+    private PlaybackPerformancePolicy _performancePolicy;
 
     // When true and decoding on the shared GPU device, hw frames are handed to
     // the renderer as D3D11 NV12 textures (zero-copy) instead of being
@@ -62,6 +63,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
     // renderer confirms it can do the NV12 shader path; cleared to fall back to
     // the CPU color pipeline.
     public bool PreferZeroCopy { get; set; }
+    internal PlaybackPerformancePolicy CurrentPerformancePolicyForTests => _performancePolicy;
     // True while a GPU frame is held out for the renderer (av_frame_unref'd on
     // the next NextFrameAsync call, since Present is synchronous).
     private bool _heldHwFrame;
@@ -76,6 +78,12 @@ public sealed class FfmpegBackend : IPlaybackBackend
     {
         _logger = logger;
         _hwDeviceProvider = hwDeviceProvider;
+    }
+
+    public void UpdatePerformancePolicy(PlaybackPerformancePolicy policy)
+    {
+        _performancePolicy = policy;
+        ApplyDecoderDiscardPolicy();
     }
 
     public Task<bool> OpenAsync(string filePath, CancellationToken ct = default)
@@ -119,6 +127,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
                 _codecCtx = FfmpegNative.avcodec_alloc_context3(decoder);
                 FfmpegNative.avcodec_parameters_to_context(_codecCtx, codecPar);
+                ApplyDecoderDiscardPolicy();
 
                 if (!OpenCodecWithFallback(decoder, codecPar))
                     return Fail($"avcodec_open2 failed");
@@ -392,10 +401,25 @@ public sealed class FfmpegBackend : IPlaybackBackend
             ResetCodecCtx();
             _codecCtx = FfmpegNative.avcodec_alloc_context3(decoder);
             FfmpegNative.avcodec_parameters_to_context(_codecCtx, codecPar);
+            ApplyDecoderDiscardPolicy();
         }
 
         _useHardware = false;
+        ApplyDecoderDiscardPolicy();
         return FfmpegNative.avcodec_open2(_codecCtx, decoder, IntPtr.Zero) == 0;
+    }
+
+    private void ApplyDecoderDiscardPolicy()
+    {
+        if (_codecCtx == IntPtr.Zero) return;
+        var discard = _performancePolicy.DecoderDiscard switch
+        {
+            DecoderFrameDiscard.NonReference => FfmpegNative.AVDISCARD_NONREF,
+            _ => FfmpegNative.AVDISCARD_DEFAULT,
+        };
+        var ret = FfmpegNative.av_opt_set_int(_codecCtx, "skip_frame", discard, 0);
+        if (ret < 0)
+            _logger.Warn($"Failed to apply FFmpeg skip_frame policy {discard}: 0x{ret:X8}");
     }
 
     // Frees the codec context and the transfer destination frame WITHOUT

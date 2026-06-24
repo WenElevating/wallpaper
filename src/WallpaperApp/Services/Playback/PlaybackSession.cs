@@ -263,6 +263,7 @@ public sealed class PlaybackSession : IDisposable
                 }
             }
 
+            _backend.UpdatePerformancePolicy(CurrentPerformancePolicy);
             _backend.PlayAsync(ct).GetAwaiter().GetResult();
             _logger.Info($"Session started for monitor {_monitorId}");
 
@@ -304,6 +305,7 @@ public sealed class PlaybackSession : IDisposable
         var skippedFrames = 0L;
         var sw = new Stopwatch();
         var loggedMode = false;
+        PlaybackPerformancePolicy? appliedBackendPolicy = null;
 
         void LogPerformanceSummary(PlaybackPerformancePolicy policy, long nowUs)
         {
@@ -356,6 +358,12 @@ public sealed class PlaybackSession : IDisposable
             lastPts = frame.PtsUs;
 
             var policy = CurrentPerformancePolicy;
+            if (appliedBackendPolicy != policy)
+            {
+                _backend.UpdatePerformancePolicy(policy);
+                appliedBackendPolicy = policy;
+            }
+
             var nowUs = _clock.NowUs;
             if (!ShouldPresentFrame(nowUs, lastPresentedUs, policy))
             {

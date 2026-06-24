@@ -152,13 +152,15 @@ public sealed class MainViewModelWallpaperCommandsTests : IDisposable
         await vm.LoadAsync();
 
         Assert.Equal(WallpaperPerformanceProfile.Saver, vm.SelectedPerformanceProfile);
-        Assert.Equal(15, CurrentPolicy(vm).MaxPresentFps);
+        Assert.Null(CurrentPolicy(vm).MaxPresentFps);
+        Assert.Equal(DecoderFrameDiscard.NonReference, CurrentPolicy(vm).DecoderDiscard);
 
         vm.SelectedPerformanceProfile = WallpaperPerformanceProfile.Quality;
         await WaitForAsync(async () => (await settings.LoadAsync()).PerformanceProfile == WallpaperPerformanceProfile.Quality);
 
         Assert.Equal(WallpaperPerformanceProfile.Quality, vm.SelectedPerformanceProfile);
         Assert.Null(CurrentPolicy(vm).MaxPresentFps);
+        Assert.Equal(DecoderFrameDiscard.Default, CurrentPolicy(vm).DecoderDiscard);
     }
 
     private static PlaybackPerformancePolicy CurrentPolicy(MainViewModel vm)

@@ -31,6 +31,16 @@ public class FfmpegBackendTests : IDisposable
     }
 
     [Fact]
+    public void UpdatePerformancePolicy_StoresDecoderDiscard()
+    {
+        using var backend = new FfmpegBackend(_logger);
+
+        backend.UpdatePerformancePolicy(new PlaybackPerformancePolicy(null, DecoderFrameDiscard.NonReference));
+
+        Assert.Equal(DecoderFrameDiscard.NonReference, backend.CurrentPerformancePolicyForTests.DecoderDiscard);
+    }
+
+    [Fact]
     public async Task OpenAsync_NonexistentFile_ReturnsFalse()
     {
         using var backend = new FfmpegBackend(_logger);

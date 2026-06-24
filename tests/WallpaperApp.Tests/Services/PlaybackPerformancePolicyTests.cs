@@ -7,8 +7,8 @@ public sealed class PlaybackPerformancePolicyTests
 {
     [Theory]
     [InlineData(WallpaperPerformanceProfile.Quality, null)]
-    [InlineData(WallpaperPerformanceProfile.Balanced, 30)]
-    [InlineData(WallpaperPerformanceProfile.Saver, 15)]
+    [InlineData(WallpaperPerformanceProfile.Balanced, null)]
+    [InlineData(WallpaperPerformanceProfile.Saver, null)]
     public void FromProfile_MapsProfileToFrameRateCap(WallpaperPerformanceProfile profile, int? expected)
     {
         var policy = PlaybackPerformancePolicy.FromProfile(profile);
@@ -24,8 +24,19 @@ public sealed class PlaybackPerformancePolicyTests
     [InlineData(60, 16_666)]
     public void MinFrameIntervalUs_ReturnsExpectedInterval(int? fps, long expected)
     {
-        var policy = new PlaybackPerformancePolicy(fps);
+        var policy = new PlaybackPerformancePolicy(fps, DecoderFrameDiscard.Default);
 
         Assert.Equal(expected, policy.MinFrameIntervalUs);
+    }
+
+    [Theory]
+    [InlineData(WallpaperPerformanceProfile.Quality, DecoderFrameDiscard.Default)]
+    [InlineData(WallpaperPerformanceProfile.Balanced, DecoderFrameDiscard.Default)]
+    [InlineData(WallpaperPerformanceProfile.Saver, DecoderFrameDiscard.NonReference)]
+    public void FromProfile_MapsProfileToDecoderDiscard(WallpaperPerformanceProfile profile, DecoderFrameDiscard expected)
+    {
+        var policy = PlaybackPerformancePolicy.FromProfile(profile);
+
+        Assert.Equal(expected, policy.DecoderDiscard);
     }
 }

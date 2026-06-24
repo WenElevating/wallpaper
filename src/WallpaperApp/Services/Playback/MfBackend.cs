@@ -14,6 +14,7 @@ public sealed class MfBackend : IPlaybackBackend
     public TimeSpan Position => TimeSpan.Zero;
     public event EventHandler? EndOfStream;
     public MfBackend(FileLogger logger) { _logger = logger; _logger.Info("MF backend stub initialized"); }
+    public void UpdatePerformancePolicy(PlaybackPerformancePolicy policy) { }
     public Task<bool> OpenAsync(string filePath, CancellationToken ct = default) { _logger.Warn($"MF stub: cannot open {filePath}"); return Task.FromResult(false); }
     public Task PlayAsync(CancellationToken ct = default) => Task.CompletedTask;
     public Task PauseAsync(CancellationToken ct = default) => Task.CompletedTask;

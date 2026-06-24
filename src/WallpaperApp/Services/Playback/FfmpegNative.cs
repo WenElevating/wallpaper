@@ -113,6 +113,9 @@ internal static partial class FfmpegNative
     [LibraryImport(AvUtil)]
     internal static partial void av_buffer_unref(ref IntPtr buf);
 
+    [LibraryImport(AvUtil, StringMarshalling = StringMarshalling.Utf8)]
+    internal static partial int av_opt_set_int(IntPtr obj, string name, long value, int searchFlags);
+
     // Copies a hardware frame to a software frame (GPU texture -> CPU pixels).
     // dst must be an av_frame_alloc()'d frame; its format is filled in.
     [LibraryImport(AvUtil)]
@@ -190,4 +193,7 @@ internal static partial class FfmpegNative
     internal const int AVSEEK_FLAG_BACKWARD = 1;
     internal const int AVSEEK_FLAG_FRAME = 2;
     internal const int AVSEEK_FLAG_ANY = 4;
+
+    internal const int AVDISCARD_DEFAULT = 0;
+    internal const int AVDISCARD_NONREF = 8;
 }

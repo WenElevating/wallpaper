@@ -58,7 +58,7 @@ public sealed class PlaybackSessionTests : IDisposable
     }
 
     [Fact]
-    public async Task PerformancePolicy_CappedMode_PresentsFewerFramesThanDecoded()
+    public async Task PerformancePolicy_BalancedMode_PresentsEveryDecodedFrame()
     {
         using var backend = new FakePlaybackBackend(
             CreateFrame(0),
@@ -74,15 +74,37 @@ public sealed class PlaybackSessionTests : IDisposable
             () => backend,
             () => throw new NotImplementedException(),
             _logger,
-            new PlaybackPerformancePolicy(30),
+            PlaybackPerformancePolicy.FromProfile(WallpaperApp.Models.WallpaperPerformanceProfile.Balanced),
             new FakeClock(0, 1_000, 2_000, 40_000));
 
         var started = await session.StartAsync();
         await session.StopAsync();
 
         Assert.True(started);
-        Assert.True(backend.NextFrameCalls >= 2);
-        Assert.True(renderer.PresentCalls < backend.NextFrameCalls);
+        Assert.Equal(backend.NextFrameCalls, renderer.PresentCalls);
+    }
+
+    [Fact]
+    public async Task PerformancePolicy_SaverMode_PushesDecoderDiscardToBackend()
+    {
+        using var backend = new FakePlaybackBackend(CreateFrame());
+        using var renderer = new FakeRenderer(true);
+        using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        using var session = new PlaybackSession(
+            Guid.NewGuid(), Guid.NewGuid(), "fake.mp4", 0, 0, 1, 1,
+            (_, _, _, _) => surface,
+            (_, _, _, _) => renderer,
+            () => backend,
+            () => throw new NotImplementedException(),
+            _logger,
+            PlaybackPerformancePolicy.FromProfile(WallpaperApp.Models.WallpaperPerformanceProfile.Saver),
+            new FakeClock(0));
+
+        var started = await session.StartAsync();
+        await session.StopAsync();
+
+        Assert.True(started);
+        Assert.Equal(DecoderFrameDiscard.NonReference, backend.CurrentPolicy.DecoderDiscard);
     }
 
     [Fact]
@@ -262,7 +284,13 @@ public sealed class PlaybackSessionTests : IDisposable
         public TimeSpan Duration => TimeSpan.Zero;
         public TimeSpan Position => TimeSpan.Zero;
         public int NextFrameCalls { get; private set; }
+        public PlaybackPerformancePolicy CurrentPolicy { get; private set; }
         public event EventHandler? EndOfStream;
+
+        public void UpdatePerformancePolicy(PlaybackPerformancePolicy policy)
+        {
+            CurrentPolicy = policy;
+        }
 
         public Task<bool> OpenAsync(string filePath, CancellationToken ct = default) => Task.FromResult(true);
 

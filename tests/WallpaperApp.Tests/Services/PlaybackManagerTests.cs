@@ -169,7 +169,7 @@ public sealed class PlaybackManagerTests : IDisposable
             createBackend: () => backend,
             createFallbackBackend: () => new FakePlaybackBackend());
 
-        manager.UpdatePerformancePolicy(new PlaybackPerformancePolicy(15));
+        manager.UpdatePerformancePolicy(new PlaybackPerformancePolicy(15, DecoderFrameDiscard.Default));
 
         var ok = await manager.SetWallpaperAsync(monitorId, Guid.NewGuid(), "sample.mp4", 0, 0, 1, 1);
 
@@ -195,7 +195,7 @@ public sealed class PlaybackManagerTests : IDisposable
         var ok = await manager.SetWallpaperAsync(monitorId, Guid.NewGuid(), "sample.mp4", 0, 0, 1, 1);
         Assert.True(ok);
 
-        manager.UpdatePerformancePolicy(new PlaybackPerformancePolicy(15));
+        manager.UpdatePerformancePolicy(new PlaybackPerformancePolicy(15, DecoderFrameDiscard.Default));
 
         Assert.True(backend.IsPlaying);
         Assert.Equal(15, manager.GetPerformancePolicyForTests(monitorId)?.MaxPresentFps);
@@ -217,9 +217,9 @@ public sealed class PlaybackManagerTests : IDisposable
             () => new FakePlaybackBackend(),
             () => new FakePlaybackBackend(),
             _logger,
-            new PlaybackPerformancePolicy(30));
+            new PlaybackPerformancePolicy(30, DecoderFrameDiscard.Default));
 
-        session.UpdatePerformancePolicy(new PlaybackPerformancePolicy(15));
+        session.UpdatePerformancePolicy(new PlaybackPerformancePolicy(15, DecoderFrameDiscard.Default));
 
         Assert.Equal(15, session.CurrentPerformancePolicy.MaxPresentFps);
     }
@@ -298,6 +298,10 @@ public sealed class PlaybackManagerTests : IDisposable
         public TimeSpan Duration => TimeSpan.Zero;
         public TimeSpan Position => TimeSpan.Zero;
         public event EventHandler? EndOfStream;
+
+        public void UpdatePerformancePolicy(PlaybackPerformancePolicy policy)
+        {
+        }
 
         public Task<bool> OpenAsync(string filePath, CancellationToken ct = default) => Task.FromResult(true);
 
