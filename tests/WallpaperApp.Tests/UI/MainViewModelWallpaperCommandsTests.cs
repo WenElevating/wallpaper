@@ -138,6 +138,46 @@ public sealed class MainViewModelWallpaperCommandsTests : IDisposable
         Assert.False(vm.SetAsWallpaperCommand.CanExecute(null));
     }
 
+    [Fact]
+    public async Task SelectedPerformanceProfile_LoadsPersistsAndUpdatesPlaybackPolicy()
+    {
+        var settingsPath = Path.Combine(_tempDir, "settings.json");
+        var settings = new SettingsService(settingsPath);
+        await settings.SaveAsync(new AppSettings
+        {
+            PerformanceProfile = WallpaperPerformanceProfile.Saver
+        });
+
+        var vm = CreateViewModel(settings: settings);
+        await vm.LoadAsync();
+
+        Assert.Equal(WallpaperPerformanceProfile.Saver, vm.SelectedPerformanceProfile);
+        Assert.Equal(15, CurrentPolicy(vm).MaxPresentFps);
+
+        vm.SelectedPerformanceProfile = WallpaperPerformanceProfile.Quality;
+        await WaitForAsync(async () => (await settings.LoadAsync()).PerformanceProfile == WallpaperPerformanceProfile.Quality);
+
+        Assert.Equal(WallpaperPerformanceProfile.Quality, vm.SelectedPerformanceProfile);
+        Assert.Null(CurrentPolicy(vm).MaxPresentFps);
+    }
+
+    private static PlaybackPerformancePolicy CurrentPolicy(MainViewModel vm)
+    {
+        var field = typeof(PlaybackManager).GetField("_performancePolicy",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(field);
+        return Assert.IsType<PlaybackPerformancePolicy>(field.GetValue(vm.PlaybackForTests));
+    }
+
+    private static async Task WaitForAsync(Func<Task<bool>> condition)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        while (!await condition())
+        {
+            await Task.Delay(25, cts.Token);
+        }
+    }
+
     private async Task<WallpaperItem> SeedWallpaperAsync(LibraryService library, string name = "clip")
     {
         var path = Path.Combine(_tempDir, name + ".mp4");
@@ -145,14 +185,17 @@ public sealed class MainViewModelWallpaperCommandsTests : IDisposable
         return (await library.ImportAsync(path))!;
     }
 
-    private MainViewModel CreateViewModel(LibraryService? library = null, PlaylistService? playlistService = null)
+    private MainViewModel CreateViewModel(
+        LibraryService? library = null,
+        PlaylistService? playlistService = null,
+        SettingsService? settings = null)
     {
         library ??= new LibraryService(_logger, _provider, Path.Combine(_tempDir, "lib"));
         playlistService ??= new PlaylistService(_logger, _db);
         var desktopHost = new DesktopHost(_logger);
         var playback = new TestablePlaybackManager(_logger, desktopHost);
         var monitors = new MonitorManager(_logger);
-        var settings = new SettingsService(Path.Combine(_tempDir, "settings.json"));
+        settings ??= new SettingsService(Path.Combine(_tempDir, "settings.json"));
         var hotkeys = new GlobalHotkeyService(_logger);
         var shuffler = new RandomWallpaperSwitcher(_logger);
         return new MainViewModel(library, playback, monitors, settings, _logger, hotkeys, playlistService, shuffler);

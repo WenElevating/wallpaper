@@ -335,6 +335,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public async Task LoadAsync(CancellationToken ct = default)
     {
         Settings = await _settings.LoadAsync();
+        _playback.UpdatePerformancePolicy(PlaybackPerformancePolicy.FromProfile(Settings.PerformanceProfile));
         LibraryRootDisplay = string.IsNullOrEmpty(Settings.LibraryRoot)
             ? LibraryService.DefaultLibraryDir()
             : Settings.LibraryRoot;
@@ -1036,12 +1037,23 @@ public sealed class MainViewModel : INotifyPropertyChanged
         set => UpdatePerfSetting(s => s with { PauseOnRemoteSession = value });
     }
 
+    public IReadOnlyList<WallpaperPerformanceProfile> PerformanceProfiles { get; } =
+        Enum.GetValues<WallpaperPerformanceProfile>();
+
+    public WallpaperPerformanceProfile SelectedPerformanceProfile
+    {
+        get => Settings.PerformanceProfile;
+        set => UpdatePerfSetting(s => s with { PerformanceProfile = value });
+    }
+
     private async void UpdatePerfSetting(Func<AppSettings, AppSettings> change)
     {
         Settings = change(Settings);
         OnPropertyChanged(nameof(IsGlobalPauseOnFullscreen));
         OnPropertyChanged(nameof(IsPauseOnBattery));
         OnPropertyChanged(nameof(IsPauseOnRemoteSession));
+        OnPropertyChanged(nameof(SelectedPerformanceProfile));
+        _playback.UpdatePerformancePolicy(PlaybackPerformancePolicy.FromProfile(Settings.PerformanceProfile));
         try { await _settings.SaveAsync(Settings); }
         catch (Exception ex) { _logger.Warn($"Failed to save settings: {ex.Message}"); }
     }
