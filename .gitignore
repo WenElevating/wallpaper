@@ -10,5 +10,6 @@ obj/
 TestResults/
 .omc/
 .omx/
+.worktrees/
 stdout.txt
 stderr.txt
