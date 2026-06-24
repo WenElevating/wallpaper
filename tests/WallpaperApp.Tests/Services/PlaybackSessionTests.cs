@@ -57,6 +57,60 @@ public sealed class PlaybackSessionTests : IDisposable
         Assert.True(renderer.PresentCalls >= 1);
     }
 
+    [Fact]
+    public async Task PerformancePolicy_CappedMode_PresentsFewerFramesThanDecoded()
+    {
+        using var backend = new FakePlaybackBackend(
+            CreateFrame(0),
+            CreateFrame(1_000),
+            CreateFrame(2_000),
+            CreateFrame(40_000));
+        using var renderer = new FakeRenderer(true);
+        using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        using var session = new PlaybackSession(
+            Guid.NewGuid(), Guid.NewGuid(), "fake.mp4", 0, 0, 1, 1,
+            (_, _, _, _) => surface,
+            (_, _, _, _) => renderer,
+            () => backend,
+            () => throw new NotImplementedException(),
+            _logger,
+            new PlaybackPerformancePolicy(30),
+            new FakeClock(0, 1_000, 2_000, 40_000));
+
+        var started = await session.StartAsync();
+        await session.StopAsync();
+
+        Assert.True(started);
+        Assert.True(backend.NextFrameCalls >= 2);
+        Assert.True(renderer.PresentCalls < backend.NextFrameCalls);
+    }
+
+    [Fact]
+    public async Task PerformancePolicy_QualityMode_PresentsEveryDecodedFrame()
+    {
+        using var backend = new FakePlaybackBackend(
+            CreateFrame(0),
+            CreateFrame(1_000),
+            CreateFrame(2_000));
+        using var renderer = new FakeRenderer(true);
+        using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        using var session = new PlaybackSession(
+            Guid.NewGuid(), Guid.NewGuid(), "fake.mp4", 0, 0, 1, 1,
+            (_, _, _, _) => surface,
+            (_, _, _, _) => renderer,
+            () => backend,
+            () => throw new NotImplementedException(),
+            _logger,
+            new PlaybackPerformancePolicy(null),
+            new FakeClock(0, 1_000, 2_000));
+
+        var started = await session.StartAsync();
+        await session.StopAsync();
+
+        Assert.True(started);
+        Assert.Equal(backend.NextFrameCalls, renderer.PresentCalls);
+    }
+
     public void Dispose()
     {
         _logger.Dispose();
@@ -142,10 +196,35 @@ public sealed class PlaybackSessionTests : IDisposable
     }
 
     private static FrameData CreateFrame()
+        => CreateFrame(0);
+
+    private static FrameData CreateFrame(long ptsUs)
     {
         var size = 4 * 4;
         var buffer = System.Runtime.InteropServices.Marshal.AllocHGlobal(size);
-        return new FrameData(buffer, 1, 1, 4, 0);
+        return new FrameData(buffer, 1, 1, 4, ptsUs);
+    }
+
+    private sealed class FakeClock : IClock
+    {
+        private readonly Queue<long> _timestamps;
+        private long _lastTimestamp;
+
+        public FakeClock(params long[] timestamps)
+        {
+            _timestamps = new Queue<long>(timestamps);
+            _lastTimestamp = timestamps.Length > 0 ? timestamps[^1] : 0;
+        }
+
+        public long NowUs
+        {
+            get
+            {
+                if (_timestamps.Count > 0)
+                    _lastTimestamp = _timestamps.Dequeue();
+                return _lastTimestamp;
+            }
+        }
     }
 
     private sealed class FakeWallpaperSurface : IWallpaperSurface
@@ -182,6 +261,7 @@ public sealed class PlaybackSessionTests : IDisposable
         public int VideoHeight => 0;
         public TimeSpan Duration => TimeSpan.Zero;
         public TimeSpan Position => TimeSpan.Zero;
+        public int NextFrameCalls { get; private set; }
         public event EventHandler? EndOfStream;
 
         public Task<bool> OpenAsync(string filePath, CancellationToken ct = default) => Task.FromResult(true);
@@ -215,7 +295,12 @@ public sealed class PlaybackSessionTests : IDisposable
         public Task<FrameData?> NextFrameAsync(CancellationToken ct = default)
         {
             if (_frames.Count > 0)
-                return Task.FromResult(_frames.Dequeue());
+            {
+                var frame = _frames.Dequeue();
+                if (frame != null)
+                    NextFrameCalls++;
+                return Task.FromResult(frame);
+            }
 
             IsPlaying = false;
             EndOfStream?.Invoke(this, EventArgs.Empty);

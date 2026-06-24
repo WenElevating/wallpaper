@@ -42,6 +42,7 @@ public sealed class PlaybackSession : IDisposable
     private readonly Func<IPlaybackBackend> _createBackend;
     private readonly Func<IPlaybackBackend> _createFallbackBackend;
     private readonly object _performancePolicyLock = new();
+    private readonly IClock _clock;
     private PlaybackPerformancePolicy _performancePolicy;
 
     private CancellationTokenSource? _cts;
@@ -87,6 +88,36 @@ public sealed class PlaybackSession : IDisposable
         Func<IPlaybackBackend> createFallbackBackend,
         FileLogger logger,
         PlaybackPerformancePolicy performancePolicy = default)
+        : this(
+            monitorId,
+            wallpaperId,
+            filePath,
+            x,
+            y,
+            width,
+            height,
+            createSurface,
+            createRenderer,
+            createBackend,
+            createFallbackBackend,
+            logger,
+            performancePolicy,
+            null)
+    {
+    }
+
+    internal PlaybackSession(
+        Guid monitorId,
+        Guid wallpaperId,
+        string filePath,
+        int x, int y, int width, int height,
+        Func<int, int, int, int, IWallpaperSurface?> createSurface,
+        Func<IntPtr, int, int, FileLogger, IFrameRenderer> createRenderer,
+        Func<IPlaybackBackend> createBackend,
+        Func<IPlaybackBackend> createFallbackBackend,
+        FileLogger logger,
+        PlaybackPerformancePolicy performancePolicy,
+        IClock? clock)
     {
         _monitorId = monitorId;
         _wallpaperId = wallpaperId;
@@ -101,6 +132,13 @@ public sealed class PlaybackSession : IDisposable
         _createFallbackBackend = createFallbackBackend;
         _logger = logger;
         _performancePolicy = performancePolicy;
+        _clock = clock ?? new StopwatchClock();
+    }
+
+    internal static bool ShouldPresentFrame(long nowUs, long lastPresentedUs, PlaybackPerformancePolicy policy)
+    {
+        var minIntervalUs = policy.MinFrameIntervalUs;
+        return minIntervalUs <= 0 || lastPresentedUs < 0 || nowUs - lastPresentedUs >= minIntervalUs;
     }
 
     public Task<bool> StartAsync(CancellationToken ct = default)
@@ -259,8 +297,26 @@ public sealed class PlaybackSession : IDisposable
     private void RenderLoop(CancellationToken ct)
     {
         var lastPts = -1L;
+        var lastPresentedUs = -1L;
+        var lastPerfLogUs = _clock.NowUs;
+        var decodedFrames = 0L;
+        var presentedFrames = 0L;
+        var skippedFrames = 0L;
         var sw = new Stopwatch();
         var loggedMode = false;
+
+        void LogPerformanceSummary(PlaybackPerformancePolicy policy, long nowUs)
+        {
+            if (nowUs - lastPerfLogUs < 30_000_000L)
+                return;
+
+            var fpsCap = policy.MaxPresentFps?.ToString() ?? "native";
+            _logger.Debug($"Playback perf monitor={_monitorId} decoded={decodedFrames}/30s presented={presentedFrames}/30s skipped={skippedFrames}/30s fpsCap={fpsCap}");
+            decodedFrames = 0;
+            presentedFrames = 0;
+            skippedFrames = 0;
+            lastPerfLogUs = nowUs;
+        }
 
         while (!ct.IsCancellationRequested && _backend!.IsPlaying)
         {
@@ -280,9 +336,12 @@ public sealed class PlaybackSession : IDisposable
                 _backend.SeekAsync(TimeSpan.Zero, ct).GetAwaiter().GetResult();
                 _backend.PlayAsync(ct).GetAwaiter().GetResult();
                 lastPts = -1L;
+                lastPresentedUs = -1L;
                 sw.Restart();
                 continue;
             }
+
+            decodedFrames++;
 
             if (lastPts > 0 && frame.PtsUs > lastPts)
             {
@@ -296,8 +355,21 @@ public sealed class PlaybackSession : IDisposable
             sw.Restart();
             lastPts = frame.PtsUs;
 
+            var policy = CurrentPerformancePolicy;
+            var nowUs = _clock.NowUs;
+            if (!ShouldPresentFrame(nowUs, lastPresentedUs, policy))
+            {
+                skippedFrames++;
+                LogPerformanceSummary(policy, nowUs);
+                frame.Dispose();
+                continue;
+            }
+
             var ok = _renderer!.Present(frame);
+            presentedFrames++;
+            lastPresentedUs = nowUs;
             frame.Dispose();
+            LogPerformanceSummary(policy, nowUs);
 
             // Signal readiness from the first frame's result so StartAsync
             // reports success only once the pipeline has actually rendered
