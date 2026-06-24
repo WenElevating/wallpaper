@@ -30,4 +30,27 @@ public class SettingsServiceTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public async Task SaveAndLoad_PersistsPerformanceProfile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"test_settings_{Guid.NewGuid()}.json");
+        try
+        {
+            var service = new SettingsService(path);
+            var settings = new AppSettings
+            {
+                PerformanceProfile = WallpaperPerformanceProfile.Saver
+            };
+
+            await service.SaveAsync(settings);
+            var loaded = await service.LoadAsync();
+
+            Assert.Equal(WallpaperPerformanceProfile.Saver, loaded.PerformanceProfile);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
 }

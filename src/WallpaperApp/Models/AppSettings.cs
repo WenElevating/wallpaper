@@ -1,5 +1,12 @@
 namespace WallpaperApp.Models;
 
+public enum WallpaperPerformanceProfile
+{
+    Quality,
+    Balanced,
+    Saver
+}
+
 // Settings bag, persisted as JSON by SettingsService. A record so language (and
 // future) updates can use an immutable `with` copy instead of in-place mutation.
 public record AppSettings
@@ -13,6 +20,7 @@ public record AppSettings
     public bool PauseOnRemoteSession { get; init; } = true;
     public FitMode DefaultFitMode { get; init; } = FitMode.Fill;
     public bool HardwareAccelerationEnabled { get; init; } = true;
+    public WallpaperPerformanceProfile PerformanceProfile { get; init; } = WallpaperPerformanceProfile.Balanced;
     public string LogVerbosity { get; init; } = "Info";
     public string Theme { get; init; } = "Dark";
     /// <summary>Global hotkey bindings. Empty slots are unbound.</summary>
