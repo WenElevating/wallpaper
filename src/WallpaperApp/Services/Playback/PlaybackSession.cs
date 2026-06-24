@@ -41,6 +41,7 @@ public sealed class PlaybackSession : IDisposable
     private readonly Func<IntPtr, int, int, FileLogger, IFrameRenderer> _createRenderer;
     private readonly Func<IPlaybackBackend> _createBackend;
     private readonly Func<IPlaybackBackend> _createFallbackBackend;
+    private readonly object _performancePolicyLock = new();
     private PlaybackPerformancePolicy _performancePolicy;
 
     private CancellationTokenSource? _cts;
@@ -64,7 +65,16 @@ public sealed class PlaybackSession : IDisposable
     public Guid WallpaperId => _wallpaperId;
     public bool IsPlaying => _backend?.IsPlaying ?? false;
     public bool IsPaused => _backend?.IsPaused ?? false;
-    internal PlaybackPerformancePolicy PerformancePolicyForTests => _performancePolicy;
+    internal PlaybackPerformancePolicy CurrentPerformancePolicy
+    {
+        get
+        {
+            lock (_performancePolicyLock)
+                return _performancePolicy;
+        }
+    }
+
+    internal PlaybackPerformancePolicy PerformancePolicyForTests => CurrentPerformancePolicy;
 
     public PlaybackSession(
         Guid monitorId,
@@ -134,7 +144,8 @@ public sealed class PlaybackSession : IDisposable
 
     public void UpdatePerformancePolicy(PlaybackPerformancePolicy policy)
     {
-        _performancePolicy = policy;
+        lock (_performancePolicyLock)
+            _performancePolicy = policy;
     }
 
     // Adds a pause reason. Calls the backend's PauseAsync only on the empty->

@@ -201,6 +201,29 @@ public sealed class PlaybackManagerTests : IDisposable
         Assert.Equal(15, manager.GetPerformancePolicyForTests(monitorId)?.MaxPresentFps);
     }
 
+    [Fact]
+    public void PlaybackSession_CurrentPerformancePolicy_ReturnsUpdatedSnapshot()
+    {
+        using var session = new PlaybackSession(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "sample.mp4",
+            0,
+            0,
+            1,
+            1,
+            (_, _, _, _) => new FakeWallpaperSurface(new IntPtr(1), 1, 1),
+            (_, _, _, _) => new FakeRenderer(true),
+            () => new FakePlaybackBackend(),
+            () => new FakePlaybackBackend(),
+            _logger,
+            new PlaybackPerformancePolicy(30));
+
+        session.UpdatePerformancePolicy(new PlaybackPerformancePolicy(15));
+
+        Assert.Equal(15, session.CurrentPerformancePolicy.MaxPresentFps);
+    }
+
     public void Dispose()
     {
         _logger.Dispose();
