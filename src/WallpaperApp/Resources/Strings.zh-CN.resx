@@ -172,6 +172,18 @@
   <data name="PauseOnRemoteSessionLabel" xml:space="preserve">
     <value>在远程桌面 / 投屏会话期间暂停</value>
   </data>
+  <data name="WallpaperPerformanceLabel" xml:space="preserve">
+    <value>壁纸性能</value>
+  </data>
+  <data name="PerformanceProfileQuality" xml:space="preserve">
+    <value>画质优先</value>
+  </data>
+  <data name="PerformanceProfileBalanced" xml:space="preserve">
+    <value>平衡</value>
+  </data>
+  <data name="PerformanceProfileSaver" xml:space="preserve">
+    <value>省电</value>
+  </data>
   <data name="HotkeyTogglePauseLabel" xml:space="preserve">
     <value>暂停 / 恢复 热键</value>
   </data>

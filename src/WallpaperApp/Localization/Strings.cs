@@ -65,6 +65,10 @@ internal static class Strings
     public static string PauseOnFullscreenLabel => Get(nameof(PauseOnFullscreenLabel));
     public static string PauseOnBatteryLabel => Get(nameof(PauseOnBatteryLabel));
     public static string PauseOnRemoteSessionLabel => Get(nameof(PauseOnRemoteSessionLabel));
+    public static string WallpaperPerformanceLabel => Get(nameof(WallpaperPerformanceLabel));
+    public static string PerformanceProfileQuality => Get(nameof(PerformanceProfileQuality));
+    public static string PerformanceProfileBalanced => Get(nameof(PerformanceProfileBalanced));
+    public static string PerformanceProfileSaver => Get(nameof(PerformanceProfileSaver));
     public static string HotkeyTogglePauseLabel => Get(nameof(HotkeyTogglePauseLabel));
     public static string HotkeyResetButton => Get(nameof(HotkeyResetButton));
     public static string PlaylistLabel => Get(nameof(PlaylistLabel));

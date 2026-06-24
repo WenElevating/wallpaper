@@ -172,6 +172,18 @@
   <data name="PauseOnRemoteSessionLabel" xml:space="preserve">
     <value>Pause during remote desktop / screen cast sessions</value>
   </data>
+  <data name="WallpaperPerformanceLabel" xml:space="preserve">
+    <value>Wallpaper performance</value>
+  </data>
+  <data name="PerformanceProfileQuality" xml:space="preserve">
+    <value>Quality</value>
+  </data>
+  <data name="PerformanceProfileBalanced" xml:space="preserve">
+    <value>Balanced</value>
+  </data>
+  <data name="PerformanceProfileSaver" xml:space="preserve">
+    <value>Saver</value>
+  </data>
   <data name="HotkeyTogglePauseLabel" xml:space="preserve">
     <value>Pause / Resume hotkey</value>
   </data>
