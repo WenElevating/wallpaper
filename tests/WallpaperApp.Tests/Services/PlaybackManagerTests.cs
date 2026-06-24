@@ -154,6 +154,53 @@ public sealed class PlaybackManagerTests : IDisposable
         Assert.False(backends[0].IsDisposed);
     }
 
+    [Fact]
+    public async Task SetWallpaperAsync_PassesCurrentPerformancePolicyToSession()
+    {
+        var backend = new FakePlaybackBackend(CreateFrame());
+        var monitorId = Guid.NewGuid();
+        using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        using var desktopHost = new DesktopHost(_logger);
+        using var manager = new PlaybackManager(
+            _logger,
+            desktopHost,
+            createSurface: (_, _, _, _) => surface,
+            createRenderer: (_, _, _, _) => new FakeRenderer(true),
+            createBackend: () => backend,
+            createFallbackBackend: () => new FakePlaybackBackend());
+
+        manager.UpdatePerformancePolicy(new PlaybackPerformancePolicy(15));
+
+        var ok = await manager.SetWallpaperAsync(monitorId, Guid.NewGuid(), "sample.mp4", 0, 0, 1, 1);
+
+        Assert.True(ok);
+        Assert.Equal(15, manager.GetPerformancePolicyForTests(monitorId)?.MaxPresentFps);
+    }
+
+    [Fact]
+    public async Task UpdatePerformancePolicy_UpdatesActiveSessionsWithoutStoppingPlayback()
+    {
+        var backend = new FakePlaybackBackend(CreateFrame(), CreateFrame());
+        var monitorId = Guid.NewGuid();
+        using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        using var desktopHost = new DesktopHost(_logger);
+        using var manager = new PlaybackManager(
+            _logger,
+            desktopHost,
+            createSurface: (_, _, _, _) => surface,
+            createRenderer: (_, _, _, _) => new FakeRenderer(true),
+            createBackend: () => backend,
+            createFallbackBackend: () => new FakePlaybackBackend());
+
+        var ok = await manager.SetWallpaperAsync(monitorId, Guid.NewGuid(), "sample.mp4", 0, 0, 1, 1);
+        Assert.True(ok);
+
+        manager.UpdatePerformancePolicy(new PlaybackPerformancePolicy(15));
+
+        Assert.True(backend.IsPlaying);
+        Assert.Equal(15, manager.GetPerformancePolicyForTests(monitorId)?.MaxPresentFps);
+    }
+
     public void Dispose()
     {
         _logger.Dispose();

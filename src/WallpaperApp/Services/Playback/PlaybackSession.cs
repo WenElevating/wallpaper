@@ -41,6 +41,7 @@ public sealed class PlaybackSession : IDisposable
     private readonly Func<IntPtr, int, int, FileLogger, IFrameRenderer> _createRenderer;
     private readonly Func<IPlaybackBackend> _createBackend;
     private readonly Func<IPlaybackBackend> _createFallbackBackend;
+    private PlaybackPerformancePolicy _performancePolicy;
 
     private CancellationTokenSource? _cts;
     private Thread? _thread;
@@ -63,6 +64,7 @@ public sealed class PlaybackSession : IDisposable
     public Guid WallpaperId => _wallpaperId;
     public bool IsPlaying => _backend?.IsPlaying ?? false;
     public bool IsPaused => _backend?.IsPaused ?? false;
+    internal PlaybackPerformancePolicy PerformancePolicyForTests => _performancePolicy;
 
     public PlaybackSession(
         Guid monitorId,
@@ -73,7 +75,8 @@ public sealed class PlaybackSession : IDisposable
         Func<IntPtr, int, int, FileLogger, IFrameRenderer> createRenderer,
         Func<IPlaybackBackend> createBackend,
         Func<IPlaybackBackend> createFallbackBackend,
-        FileLogger logger)
+        FileLogger logger,
+        PlaybackPerformancePolicy performancePolicy = default)
     {
         _monitorId = monitorId;
         _wallpaperId = wallpaperId;
@@ -87,6 +90,7 @@ public sealed class PlaybackSession : IDisposable
         _createBackend = createBackend;
         _createFallbackBackend = createFallbackBackend;
         _logger = logger;
+        _performancePolicy = performancePolicy;
     }
 
     public Task<bool> StartAsync(CancellationToken ct = default)
@@ -127,6 +131,11 @@ public sealed class PlaybackSession : IDisposable
 
     public Task PauseAsync(CancellationToken ct = default) => ApplyPauseAsync(PauseReason.User, ct);
     public Task ResumeAsync(CancellationToken ct = default) => ClearPauseAsync(PauseReason.User, ct);
+
+    public void UpdatePerformancePolicy(PlaybackPerformancePolicy policy)
+    {
+        _performancePolicy = policy;
+    }
 
     // Adds a pause reason. Calls the backend's PauseAsync only on the empty->
     // non-empty transition (no-op if already paused for any reason), so a

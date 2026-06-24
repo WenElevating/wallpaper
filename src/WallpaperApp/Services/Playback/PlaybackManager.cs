@@ -1,4 +1,5 @@
 using System.IO;
+using WallpaperApp.Models;
 using WallpaperApp.Services.Desktop;
 using WallpaperApp.Services.Logging;
 
@@ -14,6 +15,8 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
     private readonly Func<IPlaybackBackend> _createBackend;
     private readonly Func<IPlaybackBackend> _createFallbackBackend;
     private readonly object _lock = new();
+    private PlaybackPerformancePolicy _performancePolicy =
+        PlaybackPerformancePolicy.FromProfile(WallpaperPerformanceProfile.Balanced);
     private bool _disposed;
 
     // Shared GPU device for zero-copy hardware decode + render. Set by App after
@@ -89,8 +92,12 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         // RemoveWallpaperInternalAsync(monitorId) would dispose the NEW session.
         // We dispose oldSession directly off the captured reference instead.
         PlaybackSession? oldSession;
+        PlaybackPerformancePolicy performancePolicy;
         lock (_lock)
+        {
             _sessions.TryGetValue(monitorId, out oldSession);
+            performancePolicy = _performancePolicy;
+        }
 
         // The session owns the full pipeline (window + renderer + backend) and
         // runs it on a dedicated render thread so the D2D HWND render target
@@ -104,7 +111,8 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
             _createRenderer,
             _createBackend,
             _createFallbackBackend,
-            _logger);
+            _logger,
+            performancePolicy);
 
         bool started;
         try
@@ -150,6 +158,27 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
 
         _logger.Info($"Wallpaper set on monitor {monitorId}: {Path.GetFileName(filePath)}");
         return true;
+    }
+
+    public void UpdatePerformancePolicy(PlaybackPerformancePolicy policy)
+    {
+        PlaybackSession[] sessions;
+        lock (_lock)
+        {
+            _performancePolicy = policy;
+            sessions = _sessions.Values.ToArray();
+        }
+
+        foreach (var session in sessions)
+            session.UpdatePerformancePolicy(policy);
+    }
+
+    internal PlaybackPerformancePolicy? GetPerformancePolicyForTests(Guid monitorId)
+    {
+        lock (_lock)
+            return _sessions.TryGetValue(monitorId, out var session)
+                ? session.PerformancePolicyForTests
+                : null;
     }
 
     public virtual async Task RemoveWallpaperAsync(Guid monitorId, CancellationToken ct = default)
