@@ -297,6 +297,12 @@ public sealed class PlaybackSession : IDisposable
 
     private void RenderLoop(CancellationToken ct)
     {
+        // High-precision waitable timer (~1ms resolution) for frame pacing,
+        // replacing Thread.Sleep's ~15.6ms granularity that caused the jitter
+        // which forced the present-side throttle revert in af68e99. Created once
+        // per render loop; disposed when the loop exits via `using var`.
+        using var pacingTimer = new PrecisionTimer();
+
         var lastPts = -1L;
         var lastPresentedUs = -1L;
         var lastPerfLogUs = _clock.NowUs;
@@ -351,7 +357,7 @@ public sealed class PlaybackSession : IDisposable
                 var elapsedUs = sw.ElapsedTicks * 1_000_000L / Stopwatch.Frequency;
                 var waitUs = Math.Max(0L, frameDurationUs - elapsedUs);
                 if (waitUs > 0)
-                    Thread.Sleep((int)Math.Min(waitUs / 1000, int.MaxValue));
+                    pacingTimer.Wait(waitUs);
             }
 
             sw.Restart();
