@@ -152,7 +152,7 @@ public sealed class MainViewModelWallpaperCommandsTests : IDisposable
         await vm.LoadAsync();
 
         Assert.Equal(WallpaperPerformanceProfile.Saver, vm.SelectedPerformanceProfile);
-        Assert.Null(CurrentPolicy(vm).MaxPresentFps);
+        Assert.Equal(15, CurrentPolicy(vm).MaxPresentFps);
         Assert.Equal(DecoderFrameDiscard.NonReference, CurrentPolicy(vm).DecoderDiscard);
 
         vm.SelectedPerformanceProfile = WallpaperPerformanceProfile.Quality;

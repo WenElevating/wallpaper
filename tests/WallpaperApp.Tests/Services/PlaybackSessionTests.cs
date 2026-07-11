@@ -58,8 +58,11 @@ public sealed class PlaybackSessionTests : IDisposable
     }
 
     [Fact]
-    public async Task PerformancePolicy_BalancedMode_PresentsEveryDecodedFrame()
+    public async Task PerformancePolicy_BalancedMode_SkipsFramesCloserThanInterval()
     {
+        // Balanced => MaxPresentFps=30 => MinFrameIntervalUs ≈ 33_333us.
+        // Frames at 0, 1ms, 2ms, 40ms: first always presents, the two at 1ms/2ms are
+        // skipped (< 33.3ms interval), the 40ms frame presents. => 4 decoded, 2 presented.
         using var backend = new FakePlaybackBackend(
             CreateFrame(0),
             CreateFrame(1_000),
@@ -81,7 +84,8 @@ public sealed class PlaybackSessionTests : IDisposable
         await session.StopAsync();
 
         Assert.True(started);
-        Assert.Equal(backend.NextFrameCalls, renderer.PresentCalls);
+        Assert.Equal(4, backend.NextFrameCalls);
+        Assert.Equal(2, renderer.PresentCalls);
     }
 
     [Fact]

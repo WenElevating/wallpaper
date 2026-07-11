@@ -7,8 +7,8 @@ public sealed class PlaybackPerformancePolicyTests
 {
     [Theory]
     [InlineData(WallpaperPerformanceProfile.Quality, null)]
-    [InlineData(WallpaperPerformanceProfile.Balanced, null)]
-    [InlineData(WallpaperPerformanceProfile.Saver, null)]
+    [InlineData(WallpaperPerformanceProfile.Balanced, 30)]
+    [InlineData(WallpaperPerformanceProfile.Saver, 15)]
     public void FromProfile_MapsProfileToFrameRateCap(WallpaperPerformanceProfile profile, int? expected)
     {
         var policy = PlaybackPerformancePolicy.FromProfile(profile);
