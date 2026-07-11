@@ -2,6 +2,18 @@ using System.Runtime.InteropServices;
 using WallpaperApp.Services.Logging;
 using WallpaperApp.Services.Playback;
 
+// DEAD-END (probe result B/C, observed 2026-07-11):
+// This probe validated whether FFmpeg's libavfilter `fps` filter can throttle
+// AV_PIX_FMT_D3D11 (hardware-decoded) frames. Result: NO. The buffer source
+// rejects HW pixel formats without a non-NULL hw_frames_ctx:
+//   "Setting BufferSourceContext.pix_fmt to a HW format requires hw_frames_ctx
+//    to be non-NULL!" -> graph config fails (0xFFFFFFEA).
+// The fps-filter throttling approach is therefore dead for the zero-copy D3D11
+// path (the GPU-dominant path). Phase 1 uses a waitable-timer pacing approach
+// instead (see PrecisionTimer + PlaybackSession.RenderLoop). Do NOT reattempt
+// fps-filter throttling for D3D11 without first plumbing hw_frames_ctx into the
+// buffer source args.
+
 namespace WallpaperApp.FilterProbe;
 
 internal static partial class Program
