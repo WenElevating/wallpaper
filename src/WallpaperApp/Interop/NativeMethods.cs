@@ -412,6 +412,18 @@ internal static partial class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     internal static partial bool ResetEvent(IntPtr hEvent);
 
+    // ---------- High-precision pacing (waitable timer) ----------
+    // Used by PlaybackSession's render loop for frame pacing that doesn't
+    // suffer from Thread.Sleep's ~15.6ms default timer-resolution granularity.
+    // SetWaitableTimer with a negative dueTime (in 100ns units) gives ~1ms waits.
+
+    [LibraryImport("kernel32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    internal static partial IntPtr CreateWaitableTimerW(IntPtr lpTimerAttributes, [MarshalAs(UnmanagedType.Bool)] bool bManualReset, string? lpTimerName);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static partial bool SetWaitableTimer(IntPtr hTimer, ref long lpDueTime, int lPeriod, IntPtr pfnCompletionRoutine, IntPtr lpArgToCompletionRoutine, [MarshalAs(UnmanagedType.Bool)] bool fResume);
+
     // ---------- Wallpaper visibility (Z-order region subtraction, GDI) ----------
 
     [LibraryImport("user32.dll")]
