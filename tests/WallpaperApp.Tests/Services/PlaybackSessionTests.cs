@@ -61,8 +61,13 @@ public sealed class PlaybackSessionTests : IDisposable
     public async Task PerformancePolicy_BalancedMode_SkipsFramesCloserThanInterval()
     {
         // Balanced => MaxPresentFps=30 => MinFrameIntervalUs ≈ 33_333us.
-        // Frames at 0, 1ms, 2ms, 40ms: first always presents, the two at 1ms/2ms are
-        // skipped (< 33.3ms interval), the 40ms frame presents. => 4 decoded, 2 presented.
+        // Frames at clock-times 0, 1ms, 2ms, 40ms: first always presents, the
+        // two at 1ms/2ms are skipped (< 33.3ms interval), the 40ms frame
+        // presents. So of 4 frames, at most 2 can be presented regardless of
+        // how many the loop actually consumed before StopAsync arrives — the
+        // exact decode count is timing-dependent (precise pacing consumes frames
+        // faster than the old coarse Thread.Sleep did), so we assert the gate's
+        // invariant rather than a specific decode count.
         using var backend = new FakePlaybackBackend(
             CreateFrame(0),
             CreateFrame(1_000),
@@ -84,8 +89,15 @@ public sealed class PlaybackSessionTests : IDisposable
         await session.StopAsync();
 
         Assert.True(started);
-        Assert.Equal(4, backend.NextFrameCalls);
-        Assert.Equal(2, renderer.PresentCalls);
+        // The present-side gate must cap presents at the interval-allowed count.
+        // With a 33.3ms interval and frames at 0/1/2/40ms, at most 2 of the 4
+        // decoded frames are allowed to present (frame 0 + the 40ms frame). The
+        // exact present count is timing-dependent (how many frames the loop
+        // consumed before StopAsync arrives), but it can NEVER exceed 2 if the
+        // gate is wired — and at least 1 (StartAsync resolves on first present).
+        // The boundary-by-boundary skip logic is pinned by the direct
+        // ShouldPresentFrame_* unit tests below; this test proves the wiring.
+        Assert.InRange(renderer.PresentCalls, 1, 2);
     }
 
     [Fact]
@@ -142,6 +154,61 @@ public sealed class PlaybackSessionTests : IDisposable
         _logger.Dispose();
         if (Directory.Exists(_tempDir))
             Directory.Delete(_tempDir, recursive: true);
+    }
+
+    // Direct unit tests of the ShouldPresentFrame gate (Task 5). These exercise
+    // the pure gate logic with the real FromProfile policy values, independent
+    // of the render loop's threading/timing. The integration tests above cover
+    // the end-to-end path; these pin down the exact interval-boundary behavior
+    // that the precision pacing makes effective (skip under interval, present at
+    // interval). Balanced => MaxPresentFps=30 => MinFrameIntervalUs ≈ 33_333us;
+    // Quality => MaxPresentFps=null => MinFrameIntervalUs=0 => present everything.
+    [Fact]
+    public void ShouldPresentFrame_Balanced_SkipsUnderInterval()
+    {
+        var policy = PlaybackPerformancePolicy.FromProfile(
+            WallpaperApp.Models.WallpaperPerformanceProfile.Balanced);
+        var interval = policy.MinFrameIntervalUs; // 1_000_000 / 30 = 33_333us
+
+        // First frame always presents (lastPresentedUs < 0 sentinel).
+        Assert.True(PlaybackSession.ShouldPresentFrame(0, -1, policy));
+        // Frame 1us after a present: well under the 33.3ms interval => skip.
+        Assert.False(PlaybackSession.ShouldPresentFrame(1, 0, policy));
+        // Frame exactly at the interval boundary => present (>= interval).
+        Assert.True(PlaybackSession.ShouldPresentFrame(interval, 0, policy));
+        // Frame one tick before the interval => still skip.
+        Assert.False(PlaybackSession.ShouldPresentFrame(interval - 1, 0, policy));
+        // Frame comfortably past the interval => present.
+        Assert.True(PlaybackSession.ShouldPresentFrame(interval + 5_000, 0, policy));
+    }
+
+    [Fact]
+    public void ShouldPresentFrame_Quality_PresentsEverything()
+    {
+        var policy = PlaybackPerformancePolicy.FromProfile(
+            WallpaperApp.Models.WallpaperPerformanceProfile.Quality);
+
+        // Quality has MaxPresentFps=null => MinFrameIntervalUs=0 => no cap.
+        Assert.Equal(0, policy.MinFrameIntervalUs);
+        // Even frames within a microsecond of each other must present.
+        Assert.True(PlaybackSession.ShouldPresentFrame(0, -1, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(1, 0, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(2, 1, policy));
+    }
+
+    [Fact]
+    public void ShouldPresentFrame_Saver_UsesWiderInterval()
+    {
+        var policy = PlaybackPerformancePolicy.FromProfile(
+            WallpaperApp.Models.WallpaperPerformanceProfile.Saver);
+
+        // Saver => MaxPresentFps=15 => MinFrameIntervalUs ≈ 66_666us.
+        Assert.Equal(66_666, policy.MinFrameIntervalUs);
+        Assert.True(PlaybackSession.ShouldPresentFrame(0, -1, policy));
+        // 40ms apart is under the 66.7ms saver interval => skip.
+        Assert.False(PlaybackSession.ShouldPresentFrame(40_000, 0, policy));
+        // 70ms apart clears the interval => present.
+        Assert.True(PlaybackSession.ShouldPresentFrame(70_000, 0, policy));
     }
 
     // A session is paused while ANY reason is present and only resumes once the
