@@ -8,7 +8,7 @@ public sealed class PlaybackPerformancePolicyTests
     [Theory]
     [InlineData(WallpaperPerformanceProfile.Quality, null)]
     [InlineData(WallpaperPerformanceProfile.Balanced, 30)]
-    [InlineData(WallpaperPerformanceProfile.Saver, 15)]
+    [InlineData(WallpaperPerformanceProfile.Saver, 30)]
     public void FromProfile_MapsProfileToFrameRateCap(WallpaperPerformanceProfile profile, int? expected)
     {
         var policy = PlaybackPerformancePolicy.FromProfile(profile);
@@ -38,5 +38,23 @@ public sealed class PlaybackPerformancePolicyTests
         var policy = PlaybackPerformancePolicy.FromProfile(profile);
 
         Assert.Equal(expected, policy.DecoderDiscard);
+    }
+
+    [Theory]
+    [InlineData(WallpaperPerformanceProfile.Quality, false)]
+    [InlineData(WallpaperPerformanceProfile.Balanced, true)]
+    [InlineData(WallpaperPerformanceProfile.Saver, true)]
+    public void FromProfile_SelectsProxyOnlyForNonQualityProfiles(WallpaperPerformanceProfile profile, bool expected)
+    {
+        Assert.Equal(expected, PlaybackPerformancePolicy.FromProfile(profile).PreferProxyVideo);
+    }
+
+    [Fact]
+    public void FromProfile_IdentifiesTheRequestedProfile()
+    {
+        var policy = PlaybackPerformancePolicy.FromProfile(WallpaperPerformanceProfile.Saver);
+
+        Assert.Equal(WallpaperPerformanceProfile.Saver, policy.Profile);
+        Assert.Equal(30, policy.TargetFps);
     }
 }

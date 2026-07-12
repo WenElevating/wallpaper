@@ -13,12 +13,14 @@ public sealed class LibraryService
     private readonly FileLogger _logger;
     private string _libraryDir;
     private readonly IServiceProvider _serviceProvider;
+    private readonly VideoVariantService _variants;
 
     public LibraryService(FileLogger logger, IServiceProvider serviceProvider, string? libraryDir = null)
     {
         _logger = logger;
         _serviceProvider = serviceProvider;
         _libraryDir = libraryDir ?? DefaultLibraryDir();
+        _variants = new VideoVariantService(logger);
         Directory.CreateDirectory(_libraryDir);
     }
 
@@ -98,6 +100,8 @@ public sealed class LibraryService
             db.WallpaperItems.Add(item);
             await db.SaveChangesAsync(ct);
             _logger.Info($"Imported: {fileName} -> {managedFileName}");
+            if (item.SourceType == "Video")
+                _ = GenerateVariantsAsync(item.ManagedFilePath);
             return item;
         }
         catch (Exception ex)
@@ -106,6 +110,28 @@ public sealed class LibraryService
             return null;
         }
     }
+
+    public string ResolvePlaybackPath(string sourcePath, WallpaperPerformanceProfile profile)
+    {
+        if (profile == WallpaperPerformanceProfile.Quality)
+        {
+            _logger.Debug($"Playback proxy bypass profile={profile} source={sourcePath}");
+            return sourcePath;
+        }
+
+        var variant = VideoVariantService.ResolveVariantPath(_libraryDir, sourcePath, profile);
+        if (File.Exists(variant) && new FileInfo(variant).Length > 0)
+        {
+            _logger.Info($"Playback proxy hit profile={profile} source={sourcePath} path={variant}");
+            return variant;
+        }
+
+        _logger.Debug($"Playback proxy miss profile={profile} source={sourcePath}; using source");
+        return sourcePath;
+    }
+
+    public Task GenerateVariantsAsync(string sourcePath, CancellationToken ct = default)
+        => _variants.GenerateAsync(sourcePath, _libraryDir, ct);
 
     public async Task<List<WallpaperItem>> GetAllAsync(CancellationToken ct = default)
     {
@@ -165,6 +191,13 @@ public sealed class LibraryService
             catch (Exception ex) { _logger.Warn($"Failed to delete thumbnail: {ex.Message}"); }
         }
 
+        var variantDir = VideoVariantService.ResolveVariantDirectory(_libraryDir, item.ManagedFilePath);
+        if (Directory.Exists(variantDir))
+        {
+            try { Directory.Delete(variantDir, recursive: true); }
+            catch (Exception ex) { _logger.Warn($"Failed to delete playback proxies: {ex.Message}"); }
+        }
+
         db.WallpaperItems.Remove(item);
         await db.SaveChangesAsync(ct);
         _logger.Info($"Deleted wallpaper: {item.DisplayName}");
@@ -185,6 +218,8 @@ public sealed class LibraryService
         var newLibDir = ResolveLibraryDir(newRoot);
         var newPosterDir = ResolvePosterDir(newRoot);
         Directory.CreateDirectory(newLibDir);
+        var newVariantRoot = Path.Combine(newLibDir, VideoVariantService.VariantDirectoryName);
+        Directory.CreateDirectory(newVariantRoot);
         Directory.CreateDirectory(newPosterDir);
 
         await using var db = CreateDbContext();
@@ -223,6 +258,10 @@ public sealed class LibraryService
                 }
 
                 pendingUpdates.Add((item, newVideoPath, newPosterPath));
+                var oldVariantDir = VideoVariantService.ResolveVariantDirectory(_libraryDir, item.ManagedFilePath);
+                var newVariantDir = VideoVariantService.ResolveVariantDirectory(newLibDir, newVideoPath);
+                if (Directory.Exists(oldVariantDir) && !Directory.Exists(newVariantDir))
+                    Directory.Move(oldVariantDir, newVariantDir);
                 success++;
             }
             catch (Exception ex)

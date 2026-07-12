@@ -118,6 +118,8 @@ public partial class App : Application
             // are active from the very first wallpaper operation.
             var libraryService = _serviceProvider.GetRequiredService<LibraryService>();
             libraryService.UseRoot(appSettings.LibraryRoot);
+            _serviceProvider.GetRequiredService<PlaybackManager>().PlaybackPathResolver =
+                libraryService.ResolvePlaybackPath;
             PosterCache.SetCacheRoot(appSettings.LibraryRoot);
             logger.Info($"Library root: {(string.IsNullOrEmpty(appSettings.LibraryRoot) ? "<default>" : appSettings.LibraryRoot)}");
 

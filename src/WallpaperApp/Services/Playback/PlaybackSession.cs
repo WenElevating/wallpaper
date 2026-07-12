@@ -43,6 +43,7 @@ public sealed class PlaybackSession : IDisposable
     private readonly Func<IPlaybackBackend> _createFallbackBackend;
     private readonly object _performancePolicyLock = new();
     private readonly IClock _clock;
+    private readonly TimeSpan _initialPosition;
     private PlaybackPerformancePolicy _performancePolicy;
 
     private CancellationTokenSource? _cts;
@@ -66,6 +67,12 @@ public sealed class PlaybackSession : IDisposable
     public Guid WallpaperId => _wallpaperId;
     public bool IsPlaying => _backend?.IsPlaying ?? false;
     public bool IsPaused => _backend?.IsPaused ?? false;
+    internal string FilePath => _filePath;
+    internal TimeSpan Position => _backend?.Position ?? TimeSpan.Zero;
+    internal IReadOnlyCollection<PauseReason> ActivePauseReasons
+    {
+        get { lock (_pauseLock) return _pauseReasons.ToArray(); }
+    }
     internal PlaybackPerformancePolicy CurrentPerformancePolicy
     {
         get
@@ -87,7 +94,8 @@ public sealed class PlaybackSession : IDisposable
         Func<IPlaybackBackend> createBackend,
         Func<IPlaybackBackend> createFallbackBackend,
         FileLogger logger,
-        PlaybackPerformancePolicy performancePolicy = default)
+        PlaybackPerformancePolicy performancePolicy = default,
+        TimeSpan initialPosition = default)
         : this(
             monitorId,
             wallpaperId,
@@ -102,6 +110,7 @@ public sealed class PlaybackSession : IDisposable
             createFallbackBackend,
             logger,
             performancePolicy,
+            initialPosition,
             null)
     {
     }
@@ -117,6 +126,7 @@ public sealed class PlaybackSession : IDisposable
         Func<IPlaybackBackend> createFallbackBackend,
         FileLogger logger,
         PlaybackPerformancePolicy performancePolicy,
+        TimeSpan initialPosition,
         IClock? clock)
     {
         _monitorId = monitorId;
@@ -132,7 +142,29 @@ public sealed class PlaybackSession : IDisposable
         _createFallbackBackend = createFallbackBackend;
         _logger = logger;
         _performancePolicy = performancePolicy;
+        _initialPosition = initialPosition < TimeSpan.Zero ? TimeSpan.Zero : initialPosition;
         _clock = clock ?? new StopwatchClock();
+    }
+
+    // Compatibility overload for deterministic pacing tests and existing
+    // integrations that inject the clock as the final constructor argument.
+    internal PlaybackSession(
+        Guid monitorId,
+        Guid wallpaperId,
+        string filePath,
+        int x, int y, int width, int height,
+        Func<int, int, int, int, IWallpaperSurface?> createSurface,
+        Func<IntPtr, int, int, FileLogger, IFrameRenderer> createRenderer,
+        Func<IPlaybackBackend> createBackend,
+        Func<IPlaybackBackend> createFallbackBackend,
+        FileLogger logger,
+        PlaybackPerformancePolicy performancePolicy,
+        IClock? clock)
+        : this(
+            monitorId, wallpaperId, filePath, x, y, width, height,
+            createSurface, createRenderer, createBackend, createFallbackBackend,
+            logger, performancePolicy, TimeSpan.Zero, clock)
+    {
     }
 
     internal static bool ShouldPresentFrame(long nowUs, long lastPresentedUs, PlaybackPerformancePolicy policy)
@@ -264,6 +296,8 @@ public sealed class PlaybackSession : IDisposable
             }
 
             _backend.UpdatePerformancePolicy(CurrentPerformancePolicy);
+            if (_initialPosition > TimeSpan.Zero)
+                _backend.SeekAsync(_initialPosition, ct).GetAwaiter().GetResult();
             _backend.PlayAsync(ct).GetAwaiter().GetResult();
             _logger.Info($"Session started for monitor {_monitorId}");
 
@@ -309,6 +343,9 @@ public sealed class PlaybackSession : IDisposable
         var decodedFrames = 0L;
         var presentedFrames = 0L;
         var skippedFrames = 0L;
+        var presentIntervalSumUs = 0L;
+        var maxPresentIntervalUs = 0L;
+        var lastPresentClockUs = -1L;
         var sw = new Stopwatch();
         var loggedMode = false;
         PlaybackPerformancePolicy? appliedBackendPolicy = null;
@@ -318,11 +355,18 @@ public sealed class PlaybackSession : IDisposable
             if (nowUs - lastPerfLogUs < 30_000_000L)
                 return;
 
-            var fpsCap = policy.MaxPresentFps?.ToString() ?? "native";
-            _logger.Debug($"Playback perf monitor={_monitorId} decoded={decodedFrames}/30s presented={presentedFrames}/30s skipped={skippedFrames}/30s fpsCap={fpsCap}");
+            var avgPresentIntervalUs = presentedFrames > 1 ? presentIntervalSumUs / (presentedFrames - 1) : 0;
+            var source = _backend is FfmpegBackend ffmpeg ? ffmpeg.SourcePath : _filePath;
+            source = source.Replace("\"", "'");
+            var hardware = _backend.IsHardwareDecoding ? "d3d11va" : "software";
+            var zeroCopy = _backend is FfmpegBackend { PreferZeroCopy: true } ? "true" : "false";
+            var windowSeconds = Math.Max(0.001, (nowUs - lastPerfLogUs) / 1_000_000.0);
+            _logger.Debug($"playback_perf monitor={_monitorId} profile={policy.Profile} source=\"{source}\" size={_backend.VideoWidth}x{_backend.VideoHeight} target_fps={policy.TargetFps?.ToString() ?? "native"} decoded={decodedFrames} presented={presentedFrames} skipped={skippedFrames} present_fps={presentedFrames / windowSeconds:F2} avg_interval_us={avgPresentIntervalUs} max_interval_us={maxPresentIntervalUs} hardware={hardware} zero_copy={zeroCopy}");
             decodedFrames = 0;
             presentedFrames = 0;
             skippedFrames = 0;
+            presentIntervalSumUs = 0;
+            maxPresentIntervalUs = 0;
             lastPerfLogUs = nowUs;
         }
 
@@ -345,6 +389,7 @@ public sealed class PlaybackSession : IDisposable
                 _backend.PlayAsync(ct).GetAwaiter().GetResult();
                 lastPts = -1L;
                 lastPresentedUs = -1L;
+                lastPresentClockUs = -1L;
                 sw.Restart();
                 continue;
             }
@@ -381,7 +426,14 @@ public sealed class PlaybackSession : IDisposable
 
             var ok = _renderer!.Present(frame);
             presentedFrames++;
+            if (lastPresentClockUs >= 0)
+            {
+                var intervalUs = Math.Max(0, nowUs - lastPresentClockUs);
+                presentIntervalSumUs += intervalUs;
+                maxPresentIntervalUs = Math.Max(maxPresentIntervalUs, intervalUs);
+            }
             lastPresentedUs = nowUs;
+            lastPresentClockUs = nowUs;
             frame.Dispose();
             LogPerformanceSummary(policy, nowUs);
 

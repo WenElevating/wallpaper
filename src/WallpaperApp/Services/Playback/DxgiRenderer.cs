@@ -50,6 +50,9 @@ public sealed class DxgiRenderer : IFrameRenderer
     private ID3D11DeviceContext? _context;
     private bool _ownsDevice;
     private IDXGISwapChain3? _swapChain;
+    // Owned by DXGI; it becomes invalid when the swap chain is released and
+    // must never be closed by the application.
+    private IntPtr _frameLatencyWaitable;
     private ID3D11Texture2D? _stagingTexture; // CPU upload path
     private readonly ID3D11RenderTargetView?[] _rtvs = new ID3D11RenderTargetView?[2];
 
@@ -201,6 +204,12 @@ public sealed class DxgiRenderer : IFrameRenderer
             NativeMethods.ResetEvent(_occlusionEvent);
             // change signaled — fall through to a real Present to re-evaluate
         }
+
+        // Prevent the render thread from queueing work faster than the desktop
+        // compositor can consume it. The waitable object is signalled by DXGI
+        // when the swap chain can accept another frame.
+        if (_frameLatencyWaitable != IntPtr.Zero)
+            NativeMethods.WaitForSingleObject(_frameLatencyWaitable, 1000);
 
         try
         {
@@ -429,10 +438,18 @@ public sealed class DxgiRenderer : IFrameRenderer
             Scaling = Scaling.Stretch,
             SwapEffect = SwapEffect.FlipDiscard,
             AlphaMode = AlphaMode.Ignore,
+            Flags = SwapChainFlags.FrameLatencyWaitableObject,
         };
 
         var swapChain1 = _dxgiFactory!.CreateSwapChainForHwnd(_device, _hwnd, desc, null, null);
         _swapChain = swapChain1.QueryInterface<IDXGISwapChain3>();
+        using (var swapChain2 = _swapChain.QueryInterface<IDXGISwapChain2>())
+        {
+            swapChain2.MaximumFrameLatency = 1;
+            _frameLatencyWaitable = swapChain2.FrameLatencyWaitableObject;
+            if (_frameLatencyWaitable == IntPtr.Zero)
+                _logger.Warn("DXGI frame-latency waitable object unavailable");
+        }
         swapChain1.Dispose();
         return true;
     }
@@ -463,6 +480,7 @@ public sealed class DxgiRenderer : IFrameRenderer
         _stagingTexture = null;
         _swapChain?.Dispose();
         _swapChain = null;
+        _frameLatencyWaitable = IntPtr.Zero;
 
         if (!CreateSwapChain(frameWidth, frameHeight))
             return false;
@@ -502,6 +520,7 @@ public sealed class DxgiRenderer : IFrameRenderer
         ReleaseZeroCopy();
         _stagingTexture?.Dispose(); _stagingTexture = null;
         _swapChain?.Dispose(); _swapChain = null;
+        _frameLatencyWaitable = IntPtr.Zero;
         if (_ownsDevice)
         {
             _context?.Dispose(); _context = null;

@@ -1,6 +1,7 @@
 using WallpaperApp.Services.Desktop;
 using WallpaperApp.Services.Logging;
 using WallpaperApp.Services.Playback;
+using WallpaperApp.Models;
 
 namespace WallpaperApp.Tests.Services;
 
@@ -202,6 +203,39 @@ public sealed class PlaybackManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task UpdatePerformancePolicy_SwitchesActiveSessionToResolvedVariant()
+    {
+        var backends = new List<FakePlaybackBackend>();
+        var sourcePath = "source.mp4";
+        var monitorId = Guid.NewGuid();
+        using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        using var desktopHost = new DesktopHost(_logger);
+        using var manager = new PlaybackManager(
+            _logger,
+            desktopHost,
+            createSurface: (_, _, _, _) => surface,
+            createRenderer: (_, _, _, _) => new FakeRenderer(true),
+            createBackend: () =>
+            {
+                var backend = new FakePlaybackBackend(CreateFrame());
+                backends.Add(backend);
+                return backend;
+            },
+            createFallbackBackend: () => new FakePlaybackBackend());
+
+        manager.PlaybackPathResolver = (path, profile) =>
+            profile == WallpaperPerformanceProfile.Balanced ? path + ".balanced" : path;
+
+        Assert.True(await manager.SetWallpaperAsync(monitorId, Guid.NewGuid(), sourcePath, 0, 0, 1, 1));
+        Assert.Equal(sourcePath + ".balanced", backends[0].OpenedPath);
+
+        manager.UpdatePerformancePolicy(PlaybackPerformancePolicy.FromProfile(WallpaperPerformanceProfile.Quality));
+        await WaitForAsync(() => backends.Count >= 2);
+
+        Assert.Equal(sourcePath, backends[1].OpenedPath);
+    }
+
+    [Fact]
     public void PlaybackSession_CurrentPerformancePolicy_ReturnsUpdatedSnapshot()
     {
         using var session = new PlaybackSession(
@@ -236,6 +270,13 @@ public sealed class PlaybackManagerTests : IDisposable
         var size = 4 * 4;
         var buffer = System.Runtime.InteropServices.Marshal.AllocHGlobal(size);
         return new FrameData(buffer, 1, 1, 4, 0);
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        for (var i = 0; i < 100 && !condition(); i++)
+            await Task.Delay(10);
+        Assert.True(condition());
     }
 
     private sealed class FakeWallpaperSurface : IWallpaperSurface
@@ -292,6 +333,7 @@ public sealed class PlaybackManagerTests : IDisposable
         public bool IsPlaying { get; private set; }
         public bool IsPaused { get; private set; }
         public bool IsDisposed { get; private set; }
+        public string? OpenedPath { get; private set; }
         public bool IsHardwareDecoding => false;
         public int VideoWidth => 0;
         public int VideoHeight => 0;
@@ -303,7 +345,11 @@ public sealed class PlaybackManagerTests : IDisposable
         {
         }
 
-        public Task<bool> OpenAsync(string filePath, CancellationToken ct = default) => Task.FromResult(true);
+        public Task<bool> OpenAsync(string filePath, CancellationToken ct = default)
+        {
+            OpenedPath = filePath;
+            return Task.FromResult(true);
+        }
 
         public Task PlayAsync(CancellationToken ct = default)
         {

@@ -197,18 +197,17 @@ public sealed class PlaybackSessionTests : IDisposable
     }
 
     [Fact]
-    public void ShouldPresentFrame_Saver_UsesWiderInterval()
+    public void ShouldPresentFrame_Saver_UsesContinuousPlaybackInterval()
     {
         var policy = PlaybackPerformancePolicy.FromProfile(
             WallpaperApp.Models.WallpaperPerformanceProfile.Saver);
 
-        // Saver => MaxPresentFps=15 => MinFrameIntervalUs ≈ 66_666us.
-        Assert.Equal(66_666, policy.MinFrameIntervalUs);
+        // Saver uses a 30 FPS proxy so the cadence stays continuous rather than
+        // forcing the old 15 FPS presentation pattern.
+        Assert.Equal(33_333, policy.MinFrameIntervalUs);
         Assert.True(PlaybackSession.ShouldPresentFrame(0, -1, policy));
-        // 40ms apart is under the 66.7ms saver interval => skip.
-        Assert.False(PlaybackSession.ShouldPresentFrame(40_000, 0, policy));
-        // 70ms apart clears the interval => present.
-        Assert.True(PlaybackSession.ShouldPresentFrame(70_000, 0, policy));
+        Assert.False(PlaybackSession.ShouldPresentFrame(20_000, 0, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(40_000, 0, policy));
     }
 
     // A session is paused while ANY reason is present and only resumes once the

@@ -145,4 +145,35 @@ public class LibraryServiceTests : IDisposable
         var result = await service.RenameAsync(Guid.NewGuid(), "anything");
         Assert.False(result);
     }
+
+    [Fact]
+    public void ResolvePlaybackPath_UsesOnlyExistingVariantForPerformanceProfile()
+    {
+        var service = CreateService();
+        var source = Path.Combine(_testLibDir, "ABC123.mp4");
+        var variant = VideoVariantService.ResolveVariantPath(
+            _testLibDir,
+            source,
+            WallpaperPerformanceProfile.Balanced);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(variant)!);
+        File.WriteAllBytes(variant, new byte[] { 1 });
+
+        Assert.Equal(variant, service.ResolvePlaybackPath(source, WallpaperPerformanceProfile.Balanced));
+        Assert.Equal(source, service.ResolvePlaybackPath(source, WallpaperPerformanceProfile.Saver));
+        Assert.Equal(source, service.ResolvePlaybackPath(source, WallpaperPerformanceProfile.Quality));
+    }
+
+    [Fact]
+    public async Task DeleteAsync_RemovesContentAddressedVariantDirectory()
+    {
+        var service = CreateService();
+        var item = await SeedWallpaperAsync(service, "clip");
+        var variantDir = VideoVariantService.ResolveVariantDirectory(_testLibDir, item.ManagedFilePath);
+        Directory.CreateDirectory(variantDir);
+        await File.WriteAllBytesAsync(Path.Combine(variantDir, "balanced.mp4"), new byte[] { 1 });
+
+        Assert.True(await service.DeleteAsync(item.Id));
+        Assert.False(Directory.Exists(variantDir));
+    }
 }

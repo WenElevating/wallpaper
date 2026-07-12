@@ -15,9 +15,16 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
     private readonly Func<IPlaybackBackend> _createBackend;
     private readonly Func<IPlaybackBackend> _createFallbackBackend;
     private readonly object _lock = new();
+    private readonly Dictionary<Guid, SessionDescriptor> _sessionDescriptors = new();
+    private readonly SemaphoreSlim _policySwitchGate = new(1, 1);
     private PlaybackPerformancePolicy _performancePolicy =
         PlaybackPerformancePolicy.FromProfile(WallpaperPerformanceProfile.Balanced);
     private bool _disposed;
+
+    // Set by the composition root once LibraryService has applied the active
+    // library root. Null preserves the existing direct-file behavior for tests
+    // and non-library integrations.
+    public Func<string, WallpaperPerformanceProfile, string>? PlaybackPathResolver { get; set; }
 
     // Shared GPU device for zero-copy hardware decode + render. Set by App after
     // construction. When null/unavailable, decode+render use a per-session device
@@ -66,7 +73,7 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
 
     private void RaiseSessionsChanged() => SessionsChanged?.Invoke(this, EventArgs.Empty);
 
-    public virtual async Task<bool> SetWallpaperAsync(
+    public virtual Task<bool> SetWallpaperAsync(
         Guid monitorId,
         Guid wallpaperId,
         string filePath,
@@ -75,6 +82,24 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         int monitorWidth,
         int monitorHeight,
         CancellationToken ct = default)
+    {
+        var sourcePath = filePath;
+        var path = PlaybackPathResolver?.Invoke(sourcePath, _performancePolicy.Profile) ?? sourcePath;
+        return SetWallpaperCoreAsync(monitorId, wallpaperId, path, monitorX, monitorY, monitorWidth, monitorHeight, ct, sourcePath, TimeSpan.Zero, null);
+    }
+
+    private async Task<bool> SetWallpaperCoreAsync(
+        Guid monitorId,
+        Guid wallpaperId,
+        string filePath,
+        int monitorX,
+        int monitorY,
+        int monitorWidth,
+        int monitorHeight,
+        CancellationToken ct,
+        string sourcePath,
+        TimeSpan initialPosition,
+        IReadOnlyCollection<PauseReason>? pauseReasons)
     {
         if (_disposed) return false;
 
@@ -112,7 +137,8 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
             _createBackend,
             _createFallbackBackend,
             _logger,
-            performancePolicy);
+            performancePolicy,
+            initialPosition);
 
         bool started;
         try
@@ -145,8 +171,16 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         // New session is live and rendering. Swap it into the dictionary,
         // evicting the old reference, then dispose the old session by reference.
         lock (_lock)
+        {
             _sessions[monitorId] = session;
+            _sessionDescriptors[monitorId] = new SessionDescriptor(
+                sourcePath, monitorX, monitorY, monitorWidth, monitorHeight);
+        }
         RaiseSessionsChanged();
+
+        if (pauseReasons != null)
+            foreach (var reason in pauseReasons)
+                await session.ApplyPauseAsync(reason, ct);
 
         if (oldSession != null)
         {
@@ -171,6 +205,47 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
 
         foreach (var session in sessions)
             session.UpdatePerformancePolicy(policy);
+
+        if (PlaybackPathResolver != null)
+            _ = SwitchActiveSessionsForPolicyAsync(policy, sessions);
+    }
+
+    private async Task SwitchActiveSessionsForPolicyAsync(PlaybackPerformancePolicy policy, PlaybackSession[] snapshot)
+    {
+        await _policySwitchGate.WaitAsync();
+        try
+        {
+            foreach (var oldSession in snapshot)
+            {
+                SessionDescriptor descriptor;
+                lock (_lock)
+                {
+                    if (!_sessions.TryGetValue(oldSession.MonitorId, out var current) || !ReferenceEquals(current, oldSession) ||
+                        !_sessionDescriptors.TryGetValue(oldSession.MonitorId, out descriptor!))
+                        continue;
+                }
+
+                var path = PlaybackPathResolver?.Invoke(descriptor.SourcePath, policy.Profile) ?? descriptor.SourcePath;
+                if (string.Equals(path, oldSession.FilePath, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                var started = await SetWallpaperCoreAsync(
+                    oldSession.MonitorId,
+                    oldSession.WallpaperId,
+                    path,
+                    descriptor.X,
+                    descriptor.Y,
+                    descriptor.Width,
+                    descriptor.Height,
+                    CancellationToken.None,
+                    descriptor.SourcePath,
+                    oldSession.Position,
+                    oldSession.ActivePauseReasons);
+                if (started)
+                    _logger.Info($"Playback proxy switched monitor={oldSession.MonitorId} profile={policy.Profile} path={path}");
+            }
+        }
+        finally { _policySwitchGate.Release(); }
     }
 
     internal PlaybackPerformancePolicy? GetPerformancePolicyForTests(Guid monitorId)
@@ -191,6 +266,8 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         PlaybackSession? session;
         lock (_lock)
             _sessions.Remove(monitorId, out session);
+        lock (_lock)
+            _sessionDescriptors.Remove(monitorId);
 
         if (session != null)
         {
@@ -232,6 +309,7 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         {
             sessions = _sessions.Values.ToArray();
             _sessions.Clear();
+            _sessionDescriptors.Clear();
         }
         foreach (var s in sessions)
         {
@@ -262,8 +340,13 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         {
             sessions = _sessions.Values.ToArray();
             _sessions.Clear();
+            _sessionDescriptors.Clear();
         }
         foreach (var s in sessions)
             s.Dispose();
+        _policySwitchGate.Dispose();
     }
+
+    private sealed record SessionDescriptor(
+        string SourcePath, int X, int Y, int Width, int Height);
 }

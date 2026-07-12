@@ -56,6 +56,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
     public bool IsHardwareDecoding => _decodedHw;
     private bool _warnedSwFallback;
     private PlaybackPerformancePolicy _performancePolicy;
+    public string SourcePath { get; private set; } = string.Empty;
 
     // When true and decoding on the shared GPU device, hw frames are handed to
     // the renderer as D3D11 NV12 textures (zero-copy) instead of being
@@ -93,6 +94,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
             try
             {
                 Close();
+                SourcePath = filePath;
 
                 _fmtCtx = IntPtr.Zero;
                 var ret = FfmpegNative.avformat_open_input(ref _fmtCtx, filePath, IntPtr.Zero, IntPtr.Zero);
