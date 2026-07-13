@@ -81,6 +81,22 @@ public class LibraryServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ImportAsync_SameContent_ReturnsExistingItem()
+    {
+        var service = CreateService();
+        var source = Path.Combine(_testLibDir, "same-content.mp4");
+        await File.WriteAllBytesAsync(source, new byte[] { 1, 2, 3, 4 });
+
+        var first = await service.ImportAsync(source);
+        var second = await service.ImportAsync(source);
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Equal(first!.Id, second!.Id);
+        Assert.Single(await service.GetAllAsync());
+    }
+
+    [Fact]
     public async Task GetAllAsync_EmptyDb_ReturnsEmptyList()
     {
         var service = CreateService();

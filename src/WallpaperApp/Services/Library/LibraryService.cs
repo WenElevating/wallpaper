@@ -74,14 +74,42 @@ public sealed class LibraryService
 
         try
         {
-            var fileBytes = await File.ReadAllBytesAsync(sourceFilePath, ct);
-            var hash = Convert.ToHexString(SHA256.HashData(fileBytes));
+            var fileLength = new FileInfo(sourceFilePath).Length;
+            var hash = await ComputeSha256Async(sourceFilePath, ct);
             var managedFileName = $"{hash}{ext}";
             var destPath = Path.Combine(_libraryDir, managedFileName);
 
             if (!File.Exists(destPath))
             {
-                await File.WriteAllBytesAsync(destPath, fileBytes, ct);
+                var tempPath = destPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+                try
+                {
+                    await CopyFileAsync(sourceFilePath, tempPath, ct);
+                    try
+                    {
+                        File.Move(tempPath, destPath);
+                    }
+                    catch (IOException) when (File.Exists(destPath))
+                    {
+                        // Another importer won the race to install the same
+                        // content-addressed file. The existing complete file is
+                        // the canonical destination.
+                    }
+                }
+                finally
+                {
+                    if (File.Exists(tempPath))
+                        File.Delete(tempPath);
+                }
+            }
+
+            await using var db = CreateDbContext();
+            var existing = await db.WallpaperItems
+                .FirstOrDefaultAsync(w => w.ManagedFilePath == destPath, ct);
+            if (existing != null)
+            {
+                _logger.Info($"Already imported: {fileName} -> {managedFileName}");
+                return existing;
             }
 
             var item = new WallpaperItem
@@ -91,12 +119,11 @@ public sealed class LibraryService
                 OriginalFileName = fileName,
                 ManagedFilePath = destPath,
                 ContainerFormat = ext.TrimStart('.'),
-                FileBytes = fileBytes.Length,
+                FileBytes = fileLength,
                 ImportedAtUtc = DateTime.UtcNow,
                 ValidationStatus = "Valid"
             };
 
-            await using var db = CreateDbContext();
             db.WallpaperItems.Add(item);
             await db.SaveChangesAsync(ct);
             _logger.Info($"Imported: {fileName} -> {managedFileName}");
@@ -300,5 +327,25 @@ public sealed class LibraryService
         await using var src = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize, useAsync: true);
         await using var dst = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, useAsync: true);
         await src.CopyToAsync(dst, ct);
+    }
+
+    private static async Task<string> ComputeSha256Async(string path, CancellationToken ct)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1024 * 1024, useAsync: true);
+        var buffer = new byte[1024 * 1024];
+        int read;
+        while ((read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct)) > 0)
+            hash.AppendData(buffer, 0, read);
+        return Convert.ToHexString(hash.GetHashAndReset());
+    }
+
+    private static async Task CopyFileAsync(string source, string dest, CancellationToken ct)
+    {
+        const int bufferSize = 1024 * 1024;
+        await using var src = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize, useAsync: true);
+        await using var dst = new FileStream(dest, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize, useAsync: true);
+        await src.CopyToAsync(dst, bufferSize, ct);
+        await dst.FlushAsync(ct);
     }
 }
