@@ -71,6 +71,7 @@ public sealed class PlaylistService
     public async Task ReorderMembersAsync(Guid playlistId, IReadOnlyList<Guid> wallpaperIdsInOrder, CancellationToken ct = default)
     {
         await using var db = _createDb();
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var pl = await db.Playlists.Include(p => p.Members).FirstAsync(p => p.Id == playlistId, ct);
         var membersByWallpaperId = pl.Members.ToDictionary(m => m.WallpaperId);
         var orderedMembers = new List<PlaylistMember>();
@@ -90,6 +91,7 @@ public sealed class PlaylistService
 
         pl.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
     }
 
     public async Task RemoveMemberAsync(Guid playlistId, Guid wallpaperId, CancellationToken ct = default)
