@@ -40,10 +40,16 @@ public sealed class MainViewModelPlaylistTests : IDisposable
         _logger = new FileLogger(_tempDir);
     }
 
+    private AppDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
+        return new AppDbContext(options);
+    }
+
     [Fact]
     public async Task LoadPlaylistsAsync_PopulatesExistingPlaylists()
     {
-        var playlistService = new PlaylistService(_logger, _db);
+        var playlistService = new PlaylistService(_logger, CreateContext);
         await playlistService.CreateAsync("Morning");
         var vm = CreateViewModel(playlistService);
 
@@ -56,7 +62,7 @@ public sealed class MainViewModelPlaylistTests : IDisposable
     [Fact]
     public async Task CreatePlaylistCommand_AddsCreatedPlaylistToVisibleCollection()
     {
-        var vm = CreateViewModel(new PlaylistService(_logger, _db));
+        var vm = CreateViewModel(new PlaylistService(_logger, CreateContext));
 
         vm.CreatePlaylistCommand.Execute(null);
         await WaitForAsync(() => vm.Playlists.Count == 1);
@@ -90,7 +96,7 @@ public sealed class MainViewModelPlaylistTests : IDisposable
     [Fact]
     public async Task SelectingPlaylist_PopulatesMembersAndAddableWallpapers()
     {
-        var playlistService = new PlaylistService(_logger, _db);
+        var playlistService = new PlaylistService(_logger, CreateContext);
         var wallpaperA = await SeedWallpaperAsync("A");
         var wallpaperB = await SeedWallpaperAsync("B");
         var playlistId = await playlistService.CreateAsync("Morning");
@@ -112,7 +118,7 @@ public sealed class MainViewModelPlaylistTests : IDisposable
     [Fact]
     public async Task AddRemoveDeletePlaylistCommands_UpdateSelectionState()
     {
-        var playlistService = new PlaylistService(_logger, _db);
+        var playlistService = new PlaylistService(_logger, CreateContext);
         var wallpaperA = await SeedWallpaperAsync("A");
         var wallpaperB = await SeedWallpaperAsync("B");
         var playlistId = await playlistService.CreateAsync("Morning");
@@ -145,7 +151,7 @@ public sealed class MainViewModelPlaylistTests : IDisposable
     [Fact]
     public async Task SavePlaylistSettingsCommand_PersistsEditableFields()
     {
-        var playlistService = new PlaylistService(_logger, _db);
+        var playlistService = new PlaylistService(_logger, CreateContext);
         var playlistId = await playlistService.CreateAsync("Morning");
 
         var vm = CreateViewModel(playlistService);
@@ -169,7 +175,7 @@ public sealed class MainViewModelPlaylistTests : IDisposable
     [Fact]
     public async Task MovePlaylistMemberCommands_ReorderMembers()
     {
-        var playlistService = new PlaylistService(_logger, _db);
+        var playlistService = new PlaylistService(_logger, CreateContext);
         var wallpaperA = await SeedWallpaperAsync("A");
         var wallpaperB = await SeedWallpaperAsync("B");
         var wallpaperC = await SeedWallpaperAsync("C");
@@ -197,7 +203,7 @@ public sealed class MainViewModelPlaylistTests : IDisposable
     [Fact]
     public async Task AssignPlaylistMonitorCommand_PersistsSelectedMonitor()
     {
-        var playlistService = new PlaylistService(_logger, _db);
+        var playlistService = new PlaylistService(_logger, CreateContext);
         var playlistId = await playlistService.CreateAsync("Morning");
 
         var vm = CreateViewModel(playlistService);
