@@ -50,11 +50,11 @@ public partial class SettingsView : UserControl
 
     // F3: 重置热键为默认绑定(HotkeyBindings 默认构造 = TogglePause Ctrl+Alt+W,
     // 其余槽位 None)。MainViewModel.ApplyHotkeys 负责重新注册并持久化。
-    private void ResetHotkeyButton_Click(object sender, RoutedEventArgs e)
+    private async void ResetHotkeyButton_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is MainViewModel vm)
         {
-            vm.ApplyHotkeys(new HotkeyBindings());
+            await vm.ApplyHotkeysAsync(new HotkeyBindings());
         }
     }
 }
