@@ -8,6 +8,7 @@ namespace WallpaperApp.Services.Settings;
 public sealed class SettingsService
 {
     private readonly string _settingsPath;
+    private readonly SemaphoreSlim _saveGate = new(1, 1);
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
     private const string AutoStartRegKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
     private const string AppName = "WallpaperApp";
@@ -35,11 +36,30 @@ public sealed class SettingsService
 
     public async Task SaveAsync(AppSettings settings)
     {
-        var dir = Path.GetDirectoryName(_settingsPath)!;
-        Directory.CreateDirectory(dir);
-        var json = JsonSerializer.Serialize(settings, JsonOptions);
-        await File.WriteAllTextAsync(_settingsPath, json);
-        UpdateAutoStartRegistry(settings.LaunchAtStartup);
+        await _saveGate.WaitAsync();
+        try
+        {
+            var dir = Path.GetDirectoryName(_settingsPath)!;
+            Directory.CreateDirectory(dir);
+            var json = JsonSerializer.Serialize(settings, JsonOptions);
+            var tempPath = _settingsPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                await File.WriteAllTextAsync(tempPath, json);
+                File.Move(tempPath, _settingsPath, overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(tempPath))
+                    File.Delete(tempPath);
+            }
+
+            UpdateAutoStartRegistry(settings.LaunchAtStartup);
+        }
+        finally
+        {
+            _saveGate.Release();
+        }
     }
 
     private void UpdateAutoStartRegistry(bool enabled)
