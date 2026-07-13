@@ -10,11 +10,14 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
     private readonly FileLogger _logger;
     private readonly DesktopHost _desktopHost;
     private readonly Dictionary<Guid, PlaybackSession> _sessions = new();
+    private readonly Dictionary<Guid, SemaphoreSlim> _monitorGates = new();
     private readonly Func<int, int, int, int, IWallpaperSurface?> _createSurface;
     private readonly Func<IntPtr, int, int, FileLogger, IFrameRenderer> _createRenderer;
     private readonly Func<IPlaybackBackend> _createBackend;
     private readonly Func<IPlaybackBackend> _createFallbackBackend;
     private readonly object _lock = new();
+    private readonly object _policyTasksLock = new();
+    private readonly List<Task> _policyTasks = new();
     private readonly Dictionary<Guid, SessionDescriptor> _sessionDescriptors = new();
     private readonly SemaphoreSlim _policySwitchGate = new(1, 1);
     private PlaybackPerformancePolicy _performancePolicy =
@@ -88,7 +91,47 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         return SetWallpaperCoreAsync(monitorId, wallpaperId, path, monitorX, monitorY, monitorWidth, monitorHeight, ct, sourcePath, TimeSpan.Zero, null);
     }
 
+    private SemaphoreSlim GetMonitorGate(Guid monitorId)
+    {
+        lock (_lock)
+        {
+            if (!_monitorGates.TryGetValue(monitorId, out var gate))
+            {
+                gate = new SemaphoreSlim(1, 1);
+                _monitorGates[monitorId] = gate;
+            }
+            return gate;
+        }
+    }
+
     private async Task<bool> SetWallpaperCoreAsync(
+        Guid monitorId,
+        Guid wallpaperId,
+        string filePath,
+        int monitorX,
+        int monitorY,
+        int monitorWidth,
+        int monitorHeight,
+        CancellationToken ct,
+        string sourcePath,
+        TimeSpan initialPosition,
+        IReadOnlyCollection<PauseReason>? pauseReasons)
+    {
+        var monitorGate = GetMonitorGate(monitorId);
+        await monitorGate.WaitAsync(ct);
+        try
+        {
+            return await SetWallpaperCoreSerializedAsync(
+                monitorId, wallpaperId, filePath, monitorX, monitorY, monitorWidth, monitorHeight,
+                ct, sourcePath, initialPosition, pauseReasons);
+        }
+        finally
+        {
+            monitorGate.Release();
+        }
+    }
+
+    private async Task<bool> SetWallpaperCoreSerializedAsync(
         Guid monitorId,
         Guid wallpaperId,
         string filePath,
@@ -199,6 +242,7 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         PlaybackSession[] sessions;
         lock (_lock)
         {
+            if (_disposed) return;
             _performancePolicy = policy;
             sessions = _sessions.Values.ToArray();
         }
@@ -207,7 +251,24 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
             session.UpdatePerformancePolicy(policy);
 
         if (PlaybackPathResolver != null)
-            _ = SwitchActiveSessionsForPolicyAsync(policy, sessions);
+        {
+            Task task;
+            lock (_policyTasksLock)
+            {
+                if (_disposed) return;
+                task = SwitchActiveSessionsForPolicyAsync(policy, sessions);
+                _policyTasks.Add(task);
+            }
+            _ = task.ContinueWith(
+                completed =>
+                {
+                    lock (_policyTasksLock)
+                        _policyTasks.Remove(completed);
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
     }
 
     private async Task SwitchActiveSessionsForPolicyAsync(PlaybackPerformancePolicy policy, PlaybackSession[] snapshot)
@@ -262,6 +323,20 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
     }
 
     private async Task RemoveWallpaperInternalAsync(Guid monitorId, CancellationToken ct)
+    {
+        var monitorGate = GetMonitorGate(monitorId);
+        await monitorGate.WaitAsync(ct);
+        try
+        {
+            await RemoveWallpaperSerializedAsync(monitorId, ct);
+        }
+        finally
+        {
+            monitorGate.Release();
+        }
+    }
+
+    private async Task RemoveWallpaperSerializedAsync(Guid monitorId, CancellationToken ct)
     {
         PlaybackSession? session;
         lock (_lock)
@@ -333,8 +408,20 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        Task[] policyTasks;
+        lock (_policyTasksLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            policyTasks = _policyTasks.ToArray();
+        }
+
+        foreach (var task in policyTasks)
+        {
+            try { task.GetAwaiter().GetResult(); }
+            catch (Exception ex) { _logger.Warn($"Policy switch did not complete during shutdown: {ex.Message}"); }
+        }
+
         PlaybackSession[] sessions;
         lock (_lock)
         {
@@ -344,6 +431,8 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         }
         foreach (var s in sessions)
             s.Dispose();
+        foreach (var gate in _monitorGates.Values)
+            gate.Dispose();
         _policySwitchGate.Dispose();
     }
 

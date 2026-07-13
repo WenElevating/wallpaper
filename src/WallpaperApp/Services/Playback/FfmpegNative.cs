@@ -39,6 +39,21 @@ internal static partial class FfmpegNative
     [LibraryImport(AvUtil)]
     internal static partial uint avutil_version();
 
+    internal static bool HasExpectedMajorVersions(out string reason)
+    {
+        var formatMajor = avformat_version() >> 16;
+        var codecMajor = avcodec_version() >> 16;
+        var utilMajor = avutil_version() >> 16;
+        if (formatMajor == 61 && codecMajor == 61 && utilMajor == 59)
+        {
+            reason = string.Empty;
+            return true;
+        }
+
+        reason = $"FFmpeg ABI mismatch: avformat={formatMajor}, avcodec={codecMajor}, avutil={utilMajor}; expected 61/61/59";
+        return false;
+    }
+
     [LibraryImport(AvFormat)]
     internal static partial int av_read_frame(IntPtr ps, IntPtr pkt);
 

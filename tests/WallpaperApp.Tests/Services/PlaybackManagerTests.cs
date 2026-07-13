@@ -156,6 +156,65 @@ public sealed class PlaybackManagerTests : IDisposable
     }
 
     [Fact]
+    public async Task ConcurrentSwitchesForOneMonitor_DisposeSupersededSession()
+    {
+        var backends = new List<FakePlaybackBackend>();
+        var renderers = new List<BlockingRenderer>();
+        var firstPresentStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var secondStarted = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var rendererCount = 0;
+
+        using var desktopHost = new DesktopHost(_logger);
+        using var manager = new PlaybackManager(
+            _logger,
+            desktopHost,
+            createSurface: (_, _, _, _) => new FakeWallpaperSurface(new IntPtr(1), 1, 1),
+            createRenderer: (_, _, _, _) =>
+            {
+                var index = Interlocked.Increment(ref rendererCount);
+                var renderer = index == 1
+                    ? new BlockingRenderer(firstPresentStarted, secondStarted.Task)
+                    : new BlockingRenderer(null, Task.CompletedTask);
+                lock (renderers) renderers.Add(renderer);
+                return renderer;
+            },
+            createBackend: () =>
+            {
+                var backend = new FakePlaybackBackend(CreateFrame());
+                lock (backends) backends.Add(backend);
+                return backend;
+            },
+            createFallbackBackend: () => new FakePlaybackBackend());
+
+        var monitorId = Guid.NewGuid();
+        var first = manager.SetWallpaperAsync(monitorId, Guid.NewGuid(), "first.mp4", 0, 0, 1, 1);
+        await firstPresentStarted.Task;
+
+        var second = Task.Run(async () =>
+        {
+            secondStarted.TrySetResult(true);
+            return await manager.SetWallpaperAsync(monitorId, Guid.NewGuid(), "second.mp4", 0, 0, 1, 1);
+        });
+
+        await Task.WhenAll(first, second);
+
+        Assert.True(first.Result);
+        Assert.True(second.Result);
+        lock (backends)
+        {
+            Assert.Equal(2, backends.Count);
+            Assert.Single(backends, backend => backend.IsDisposed);
+            Assert.Single(backends, backend => !backend.IsDisposed);
+        }
+        lock (renderers)
+        {
+            Assert.Equal(2, renderers.Count);
+            Assert.Single(renderers, renderer => renderer.IsDisposed);
+            Assert.Single(renderers, renderer => !renderer.IsDisposed);
+        }
+    }
+
+    [Fact]
     public async Task SetWallpaperAsync_PassesCurrentPerformancePolicyToSession()
     {
         var backend = new FakePlaybackBackend(CreateFrame());
@@ -312,6 +371,33 @@ public sealed class PlaybackManagerTests : IDisposable
         {
             PresentCalls++;
             return _result;
+        }
+
+        public void Resize(int width, int height)
+        {
+        }
+
+        public void Dispose() => IsDisposed = true;
+    }
+
+    private sealed class BlockingRenderer : IFrameRenderer
+    {
+        private readonly TaskCompletionSource<bool>? _presentStarted;
+        private readonly Task _release;
+
+        public BlockingRenderer(TaskCompletionSource<bool>? presentStarted, Task release)
+        {
+            _presentStarted = presentStarted;
+            _release = release;
+        }
+
+        public bool IsDisposed { get; private set; }
+
+        public bool Present(FrameData frame)
+        {
+            _presentStarted?.TrySetResult(true);
+            _release.GetAwaiter().GetResult();
+            return true;
         }
 
         public void Resize(int width, int height)

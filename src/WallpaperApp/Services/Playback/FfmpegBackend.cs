@@ -7,6 +7,7 @@ namespace WallpaperApp.Services.Playback;
 public sealed class FfmpegBackend : IPlaybackBackend
 {
     private readonly FileLogger _logger;
+    private readonly object _nativeLock = new();
 
     // FFmpeg contexts (native pointers)
     private IntPtr _fmtCtx;
@@ -83,20 +84,28 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
     public void UpdatePerformancePolicy(PlaybackPerformancePolicy policy)
     {
-        _performancePolicy = policy;
-        ApplyDecoderDiscardPolicy();
+        lock (_nativeLock)
+        {
+            _performancePolicy = policy;
+            ApplyDecoderDiscardPolicy();
+        }
     }
 
     public Task<bool> OpenAsync(string filePath, CancellationToken ct = default)
     {
         return Task.Run(() =>
         {
-            try
+            lock (_nativeLock)
             {
-                Close();
-                SourcePath = filePath;
+                try
+                {
+                    Close();
+                    SourcePath = filePath;
 
-                _fmtCtx = IntPtr.Zero;
+                    if (!FfmpegNative.HasExpectedMajorVersions(out var abiReason))
+                        return Fail(abiReason);
+
+                    _fmtCtx = IntPtr.Zero;
                 var ret = FfmpegNative.avformat_open_input(ref _fmtCtx, filePath, IntPtr.Zero, IntPtr.Zero);
                 if (ret < 0)
                     return Fail($"avformat_open_input failed: {filePath}");
@@ -128,7 +137,12 @@ public sealed class FfmpegBackend : IPlaybackBackend
                 _frameSize = _height * _stride;
 
                 _codecCtx = FfmpegNative.avcodec_alloc_context3(decoder);
-                FfmpegNative.avcodec_parameters_to_context(_codecCtx, codecPar);
+                if (_codecCtx == IntPtr.Zero)
+                    return Fail("avcodec_alloc_context3 returned null");
+
+                var parametersRet = FfmpegNative.avcodec_parameters_to_context(_codecCtx, codecPar);
+                if (parametersRet < 0)
+                    return Fail($"avcodec_parameters_to_context failed: 0x{parametersRet:X8}");
                 ApplyDecoderDiscardPolicy();
 
                 if (!OpenCodecWithFallback(decoder, codecPar))
@@ -142,6 +156,8 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
                 _avFrame = FfmpegNative.av_frame_alloc();
                 _avPacket = FfmpegNative.av_packet_alloc();
+                if (_avFrame == IntPtr.Zero || _avPacket == IntPtr.Zero)
+                    return Fail("FFmpeg frame or packet allocation failed");
 
                 // NOTE: the CPU double-buffers (_bufferA/__bufferB) are allocated
                 // LAZILY by EnsureCpuBuffers() on first use of the sws_scale path,
@@ -155,78 +171,93 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
                 _isOpen = true;
                 _logger.Info($"Opened: {filePath} ({_width}x{_height})");
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.Error($"Open failed: {filePath}", ex);
-                return false;
-            }
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error($"Open failed: {filePath}", ex);
+                    return false;
+                }
 
-            bool Fail(string msg) { _logger.Error(msg); return false; }
+                bool Fail(string msg) { _logger.Error(msg); return false; }
+            }
         }, ct);
     }
 
     public Task PlayAsync(CancellationToken ct = default)
     {
-        IsPlaying = true; IsPaused = false; return Task.CompletedTask;
+        lock (_nativeLock)
+        {
+            IsPlaying = true; IsPaused = false;
+        }
+        return Task.CompletedTask;
     }
 
     public Task PauseAsync(CancellationToken ct = default)
     {
-        IsPaused = true; return Task.CompletedTask;
+        lock (_nativeLock) IsPaused = true;
+        return Task.CompletedTask;
     }
 
     public Task ResumeAsync(CancellationToken ct = default)
     {
-        IsPaused = false; return Task.CompletedTask;
+        lock (_nativeLock) IsPaused = false;
+        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken ct = default)
     {
-        IsPlaying = false; IsPaused = false; Position = TimeSpan.Zero; _useBufferA = false;
+        lock (_nativeLock)
+        {
+            IsPlaying = false; IsPaused = false; Position = TimeSpan.Zero; _useBufferA = false;
+        }
         return Task.CompletedTask;
     }
 
     public Task SeekAsync(TimeSpan position, CancellationToken ct = default)
     {
-        Position = position;
-        if (_isOpen)
+        lock (_nativeLock)
         {
-            var targetPts = (long)(position.TotalSeconds * _timeBase.Den / _timeBase.Num);
-            FfmpegNative.avcodec_flush_buffers(_codecCtx);
-            FfmpegNative.av_seek_frame(_fmtCtx, _videoStreamIndex, targetPts, FfmpegNative.AVSEEK_FLAG_BACKWARD);
+            Position = position;
+            if (_isOpen)
+            {
+                var targetPts = (long)(position.TotalSeconds * _timeBase.Den / _timeBase.Num);
+                FfmpegNative.avcodec_flush_buffers(_codecCtx);
+                FfmpegNative.av_seek_frame(_fmtCtx, _videoStreamIndex, targetPts, FfmpegNative.AVSEEK_FLAG_BACKWARD);
+            }
         }
         return Task.CompletedTask;
     }
 
-    public async Task<FrameData?> NextFrameAsync(CancellationToken ct = default)
+    public Task<FrameData?> NextFrameAsync(CancellationToken ct = default)
     {
-        if (!_isOpen || !IsPlaying) return null;
-
-        // Release a previously-held GPU frame. Zero-copy keeps _avFrame alive
-        // across the renderer's synchronous Present(); by the time the next
-        // frame is requested, the texture has been copied and can be recycled.
-        if (_heldHwFrame)
+        return Task.Run(() =>
         {
-            FfmpegNative.av_frame_unref(_avFrame);
-            _heldHwFrame = false;
-        }
-
-        return await Task.Run(() =>
-        {
-            try
+            lock (_nativeLock)
             {
-                while (true)
-                {
-                    ct.ThrowIfCancellationRequested();
+                if (!_isOpen || !IsPlaying) return null;
 
-                    var ret = FfmpegNative.av_read_frame(_fmtCtx, _avPacket);
-                    if (ret < 0)
+                // Release a previously-held GPU frame. Zero-copy keeps _avFrame alive
+                // across the renderer's synchronous Present(); by the time the next
+                // frame is requested, the texture has been copied and can be recycled.
+                if (_heldHwFrame)
+                {
+                    FfmpegNative.av_frame_unref(_avFrame);
+                    _heldHwFrame = false;
+                }
+
+                try
+                {
+                    while (true)
                     {
-                        EndOfStream?.Invoke(this, EventArgs.Empty);
-                        return null;
-                    }
+                        ct.ThrowIfCancellationRequested();
+
+                        var ret = FfmpegNative.av_read_frame(_fmtCtx, _avPacket);
+                        if (ret < 0)
+                        {
+                            EndOfStream?.Invoke(this, EventArgs.Empty);
+                            return null;
+                        }
 
                     var pktStreamIdx = Marshal.ReadInt32(_avPacket, FfmpegOffsets.PacketStreamIndex);
                     if (pktStreamIdx != _videoStreamIndex)
@@ -365,14 +396,15 @@ public sealed class FfmpegBackend : IPlaybackBackend
                     var ptsUs = pts * _timeBase.Num * 1_000_000 / _timeBase.Den;
                     Position = TimeSpan.FromMicroseconds(ptsUs);
 
-                    return new FrameData(activeBuffer, _width, _height, _stride, ptsUs);
+                        return new FrameData(activeBuffer, _width, _height, _stride, ptsUs);
+                    }
                 }
-            }
-            catch (OperationCanceledException) { return null; }
-            catch (Exception ex)
-            {
-                _logger.Warn($"Frame decode error: {ex.Message}");
-                return null;
+                catch (OperationCanceledException) { return null; }
+                catch (Exception ex)
+                {
+                    _logger.Warn($"Frame decode error: {ex.Message}");
+                    return null;
+                }
             }
         }, ct);
     }
@@ -402,7 +434,11 @@ public sealed class FfmpegBackend : IPlaybackBackend
             _logger.Warn("Hardware avcodec_open2 failed; retrying software");
             ResetCodecCtx();
             _codecCtx = FfmpegNative.avcodec_alloc_context3(decoder);
-            FfmpegNative.avcodec_parameters_to_context(_codecCtx, codecPar);
+            if (_codecCtx == IntPtr.Zero || FfmpegNative.avcodec_parameters_to_context(_codecCtx, codecPar) < 0)
+            {
+                ResetCodecCtx();
+                return false;
+            }
             ApplyDecoderDiscardPolicy();
         }
 
@@ -479,9 +515,12 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        Close();
+        lock (_nativeLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            Close();
+        }
     }
 
     private static AVRational ReadTimeBase(IntPtr streamPtr)
