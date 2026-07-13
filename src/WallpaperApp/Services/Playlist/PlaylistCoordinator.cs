@@ -46,7 +46,7 @@ public sealed class PlaylistCoordinator
     {
         if (_runners.TryGetValue(monitorKey, out var old))
         {
-            old.Stop();
+            await old.StopAsync();
             _runners.Remove(monitorKey);
         }
         if (playlistId != null)
@@ -79,9 +79,13 @@ public sealed class PlaylistCoordinator
         _runners[monitorKey] = runner;
     }
 
-    public void StopAll()
+    public async Task StopAllAsync()
     {
-        foreach (var r in _runners.Values) r.Stop();
+        var runners = _runners.Values.ToArray();
         _runners.Clear();
+        foreach (var runner in runners)
+            await runner.StopAsync();
     }
+
+    public void StopAll() => StopAllAsync().GetAwaiter().GetResult();
 }

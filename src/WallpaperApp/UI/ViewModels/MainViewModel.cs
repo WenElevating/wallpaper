@@ -35,6 +35,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly GlobalHotkeyService _hotkeys;
     private readonly PlaylistService _playlistService;
     private readonly RandomWallpaperSwitcher _shuffler;
+    private readonly SemaphoreSlim _settingsSaveGate = new(1, 1);
     // Coordinator is attached after construction (its switcher needs this ViewModel
     // instance, creating a cycle; App.xaml.cs calls AttachPlaylistCoordinator).
     private PlaylistCoordinator? _playlists;
@@ -533,7 +534,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     // 设置页热键重置按钮调用:应用新绑定(默认构造 = 默认热键)并持久化。
-    public async void ApplyHotkeys(HotkeyBindings bindings)
+    public async Task ApplyHotkeysAsync(HotkeyBindings bindings)
     {
         Settings = Settings with { Hotkeys = bindings };
         _hotkeys.Apply(bindings);
@@ -926,7 +927,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         // Pause playback so the decoder releases the source files (otherwise copy
         // fails on Windows with a sharing violation). Resume after, regardless.
-        await PauseAllAsync();
+        await _playback.PauseAllAsync(PauseReason.LibraryMigration);
         try
         {
             var (success, failed) = await _library.MigrateToAsync(newRoot);
@@ -959,7 +960,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         finally
         {
-            await ResumeAllAsync();
+            await _playback.ResumeAllAsync(PauseReason.LibraryMigration);
         }
     }
 
@@ -1046,7 +1047,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         set => UpdatePerfSetting(s => s with { PerformanceProfile = value });
     }
 
-    private async void UpdatePerfSetting(Func<AppSettings, AppSettings> change)
+    private void UpdatePerfSetting(Func<AppSettings, AppSettings> change)
     {
         Settings = change(Settings);
         OnPropertyChanged(nameof(IsGlobalPauseOnFullscreen));
@@ -1054,8 +1055,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(IsPauseOnRemoteSession));
         OnPropertyChanged(nameof(SelectedPerformanceProfile));
         _playback.UpdatePerformancePolicy(PlaybackPerformancePolicy.FromProfile(Settings.PerformanceProfile));
-        try { await _settings.SaveAsync(Settings); }
-        catch (Exception ex) { _logger.Warn($"Failed to save settings: {ex.Message}"); }
+        _ = SaveSettingsAsync(Settings);
+    }
+
+    private async Task SaveSettingsAsync(AppSettings settings)
+    {
+        await _settingsSaveGate.WaitAsync();
+        try
+        {
+            await _settings.SaveAsync(settings);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Failed to save settings: {ex.Message}");
+        }
+        finally
+        {
+            _settingsSaveGate.Release();
+        }
     }
 }
 

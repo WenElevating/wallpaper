@@ -245,15 +245,12 @@ public partial class App : Application
         services.AddSingleton<LibraryService>();
         services.AddSingleton<ThumbnailService>();
         services.AddSingleton<GifTranscoder>();
-        // F1: PlaylistService holds a single AppDbContext for its lifetime. It's a
-        // singleton; AppDbContext is normally Transient per-request, but here we
-        // resolve one context that the service owns for its whole life (matches how
-        // the service is consumed — one long-lived instance driving rotation).
+        // PlaylistService is a singleton coordinator, but each database operation
+        // creates its own short-lived context to avoid cross-thread EF state.
         services.AddSingleton<PlaylistService>(sp =>
         {
             var logger = sp.GetRequiredService<FileLogger>();
-            var db = sp.GetRequiredService<AppDbContext>();
-            return new PlaylistService(logger, db);
+            return new PlaylistService(logger, () => new AppDbContext());
         });
         // PlaybackManager constructs D2dRenderer per-session using WallpaperWindow HWND
         services.AddSingleton<PlaybackManager>();
@@ -281,7 +278,7 @@ public partial class App : Application
             // may still dispatch playback or persistence work during shutdown.
             _powerAware?.Dispose();
             _remoteSession?.Dispose();
-            _playlists?.StopAll();
+            _playlists?.StopAllAsync().GetAwaiter().GetResult();
             _explorerWatcher?.Dispose();
 
             var fullscreen = _serviceProvider.GetService<FullscreenDetector>();

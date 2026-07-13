@@ -125,7 +125,21 @@ public sealed class LibraryService
             };
 
             db.WallpaperItems.Add(item);
-            await db.SaveChangesAsync(ct);
+            try
+            {
+                await db.SaveChangesAsync(ct);
+            }
+            catch (DbUpdateException)
+            {
+                db.ChangeTracker.Clear();
+                var concurrentExisting = await db.WallpaperItems
+                    .FirstOrDefaultAsync(w => w.ManagedFilePath == destPath, ct);
+                if (concurrentExisting == null)
+                    throw;
+
+                _logger.Info($"Already imported concurrently: {fileName} -> {managedFileName}");
+                return concurrentExisting;
+            }
             _logger.Info($"Imported: {fileName} -> {managedFileName}");
             if (item.SourceType == "Video")
                 _ = GenerateVariantsAsync(item.ManagedFilePath);
@@ -206,27 +220,21 @@ public sealed class LibraryService
         var item = await db.WallpaperItems.FindAsync(new object[] { id }, ct);
         if (item == null) return false;
 
-        if (File.Exists(item.ManagedFilePath))
-        {
-            try { File.Delete(item.ManagedFilePath); }
-            catch (Exception ex) { _logger.Warn($"Failed to delete file: {ex.Message}"); }
-        }
-
-        if (!string.IsNullOrEmpty(item.ThumbnailPath) && File.Exists(item.ThumbnailPath))
-        {
-            try { File.Delete(item.ThumbnailPath); }
-            catch (Exception ex) { _logger.Warn($"Failed to delete thumbnail: {ex.Message}"); }
-        }
-
         var variantDir = VideoVariantService.ResolveVariantDirectory(_libraryDir, item.ManagedFilePath);
+        db.WallpaperItems.Remove(item);
+        await db.SaveChangesAsync(ct);
+
+        // The database row is removed first. If the transaction fails, all source
+        // files remain available and the item can still be recovered.
+        DeleteFileBestEffort(item.ManagedFilePath, "file");
+        if (!string.IsNullOrEmpty(item.ThumbnailPath))
+            DeleteFileBestEffort(item.ThumbnailPath, "thumbnail");
         if (Directory.Exists(variantDir))
         {
             try { Directory.Delete(variantDir, recursive: true); }
             catch (Exception ex) { _logger.Warn($"Failed to delete playback proxies: {ex.Message}"); }
         }
 
-        db.WallpaperItems.Remove(item);
-        await db.SaveChangesAsync(ct);
         _logger.Info($"Deleted wallpaper: {item.DisplayName}");
         return true;
     }
@@ -279,16 +287,14 @@ public sealed class LibraryService
 
                 var videoName = Path.GetFileName(item.ManagedFilePath);
                 var newVideoPath = Path.Combine(newLibDir, videoName);
-                if (!File.Exists(newVideoPath))
-                    await CopyAsync(item.ManagedFilePath, newVideoPath, ct);
+                await CopyAsync(item.ManagedFilePath, newVideoPath, ct);
 
                 string? newPosterPath = null;
                 if (!string.IsNullOrEmpty(item.ThumbnailPath) && File.Exists(item.ThumbnailPath))
                 {
                     var posterName = Path.GetFileName(item.ThumbnailPath);
                     newPosterPath = Path.Combine(newPosterDir, posterName);
-                    if (!File.Exists(newPosterPath))
-                        await CopyAsync(item.ThumbnailPath, newPosterPath, ct);
+                    await CopyAsync(item.ThumbnailPath, newPosterPath, ct);
                 }
 
                 var oldVariantDir = VideoVariantService.ResolveVariantDirectory(_libraryDir, item.ManagedFilePath);
@@ -352,9 +358,32 @@ public sealed class LibraryService
     private static async Task CopyAsync(string source, string dest, CancellationToken ct)
     {
         const int bufferSize = 81920;
+        var temp = dest + "." + Guid.NewGuid().ToString("N") + ".tmp";
         await using var src = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize, useAsync: true);
-        await using var dst = new FileStream(dest, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize, useAsync: true);
-        await src.CopyToAsync(dst, ct);
+        try
+        {
+            await using (var dst = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None, bufferSize, useAsync: true))
+            {
+                await src.CopyToAsync(dst, ct);
+                await dst.FlushAsync(ct);
+            }
+
+            // The temporary file is in the destination directory, so this replace
+            // is a single same-volume install and cannot expose a partial target.
+            File.Move(temp, dest, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp))
+                File.Delete(temp);
+        }
+    }
+
+    private void DeleteFileBestEffort(string path, string kind)
+    {
+        if (!File.Exists(path)) return;
+        try { File.Delete(path); }
+        catch (Exception ex) { _logger.Warn($"Failed to delete {kind}: {ex.Message}"); }
     }
 
     private static async Task<string> ComputeSha256Async(string path, CancellationToken ct)

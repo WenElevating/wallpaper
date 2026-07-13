@@ -85,7 +85,7 @@ public sealed class MainViewModelWallpaperCommandsTests : IDisposable
     public async Task DeleteWallpaperCoreAsync_StopsPlayback_RemovesFromListAndPlaylists()
     {
         var library = new LibraryService(_logger, _provider, Path.Combine(_tempDir, "lib"));
-        var playlistService = new PlaylistService(_logger, _db);
+        var playlistService = new PlaylistService(_logger, NewContext);
         var vm = CreateViewModel(library, playlistService);
         var item = await SeedWallpaperAsync(library);
         vm.Wallpapers.Add(item);
@@ -193,7 +193,7 @@ public sealed class MainViewModelWallpaperCommandsTests : IDisposable
         SettingsService? settings = null)
     {
         library ??= new LibraryService(_logger, _provider, Path.Combine(_tempDir, "lib"));
-        playlistService ??= new PlaylistService(_logger, _db);
+        playlistService ??= new PlaylistService(_logger, NewContext);
         var desktopHost = new DesktopHost(_logger);
         var playback = new TestablePlaybackManager(_logger, desktopHost);
         var monitors = new MonitorManager(_logger);

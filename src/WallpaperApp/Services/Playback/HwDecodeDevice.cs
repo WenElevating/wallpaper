@@ -41,17 +41,23 @@ public static class HwDecodeDevice
     public static IntPtr CreateForDevice(IntPtr d3d11Device)
     {
         if (d3d11Device == IntPtr.Zero) return IntPtr.Zero;
+        IntPtr bufRef = IntPtr.Zero;
+        var deviceRefAdded = false;
         try
         {
             var type = FfmpegNative.av_hwdevice_find_type_by_name("d3d11va");
             if (type < 0) type = FfmpegNative.AV_HWDEVICE_TYPE_D3D11VA;
 
-            var bufRef = FfmpegNative.av_hwdevice_ctx_alloc(type); // AVBufferRef*
+            bufRef = FfmpegNative.av_hwdevice_ctx_alloc(type); // AVBufferRef*
             if (bufRef == IntPtr.Zero) return IntPtr.Zero;
 
             // AVBufferRef.data -> AVHWDeviceContext.hwctx -> AVD3D11VADeviceContext.device
             var hwDeviceCtx = Marshal.ReadIntPtr(bufRef, FfmpegOffsets.AvBufferRefDataOffset);
+            if (hwDeviceCtx == IntPtr.Zero)
+                return Fail("FFmpeg returned a null AVHWDeviceContext");
             var hwctx = Marshal.ReadIntPtr(hwDeviceCtx, FfmpegOffsets.AvHwDeviceCtxHwctxOffset);
+            if (hwctx == IntPtr.Zero)
+                return Fail("FFmpeg returned a null D3D11VA hardware context");
             Marshal.WriteIntPtr(hwctx, FfmpegOffsets.AvD3D11VaDeviceOffset, d3d11Device);
 
             // CRITICAL: FFmpeg's AVD3D11VADeviceContext docs state:
@@ -64,6 +70,7 @@ public static class HwDecodeDevice
             // count, and after enough cycles the device is destroyed. All
             // subsequent calls receive a dangling pointer → AccessViolation.
             Marshal.AddRef(d3d11Device);
+            deviceRefAdded = true;
 
             // init fills device_context / video_device / video_context / lock from device.
             var hr = FfmpegNative.av_hwdevice_ctx_init(bufRef);
@@ -74,15 +81,31 @@ public static class HwDecodeDevice
                 // (verified empirically), so the ref we added above would
                 // leak. Release it here to keep the count balanced.
                 Marshal.Release(d3d11Device);
+                deviceRefAdded = false;
                 Logger?.Warn($"av_hwdevice_ctx_init failed for shared device: 0x{hr:X8}");
                 FfmpegNative.av_buffer_unref(ref bufRef);
+                bufRef = IntPtr.Zero;
                 return IntPtr.Zero;
             }
-            return bufRef;
+            var result = bufRef;
+            bufRef = IntPtr.Zero;
+            return result;
         }
         catch (Exception ex)
         {
             Logger?.Warn($"CreateForDevice failed: {ex.Message}");
+            if (deviceRefAdded)
+                Marshal.Release(d3d11Device);
+            if (bufRef != IntPtr.Zero)
+                FfmpegNative.av_buffer_unref(ref bufRef);
+            return IntPtr.Zero;
+        }
+
+        IntPtr Fail(string message)
+        {
+            Logger?.Warn(message);
+            if (bufRef != IntPtr.Zero)
+                FfmpegNative.av_buffer_unref(ref bufRef);
             return IntPtr.Zero;
         }
     }

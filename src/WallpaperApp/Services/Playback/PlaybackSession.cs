@@ -18,6 +18,7 @@ public enum PauseReason
     Power,
     Occluded, // wallpaper fully covered by other windows (not visible)
     RemoteDesktop, // RDP or Miracast session active (bandwidth saver)
+    LibraryMigration, // storage root migration is copying files
 }
 
 // Owns the entire per-monitor render pipeline on a SINGLE dedicated thread:
@@ -32,6 +33,7 @@ public enum PauseReason
 // window + render target + present on one thread, which actually displays.
 public sealed class PlaybackSession : IDisposable
 {
+    private static readonly TimeSpan RenderThreadStopTimeout = TimeSpan.FromSeconds(2);
     private readonly FileLogger _logger;
     private readonly Guid _monitorId;
     private readonly Guid _wallpaperId;
@@ -193,19 +195,25 @@ public sealed class PlaybackSession : IDisposable
     public async Task StopAsync(CancellationToken ct = default)
     {
         _cts?.Cancel();
-        var thread = _thread;
-        if (thread != null && thread.IsAlive)
-        {
-            // Wait for the render thread to fully exit before disposing the
-            // window / renderer / backend it owns.
-            try { thread.Join(); } catch { }
-        }
-        _thread = null;
-
         if (_backend != null)
         {
             try { await _backend.StopAsync(ct); } catch { }
         }
+
+        var thread = _thread;
+        if (thread != null && thread.IsAlive)
+        {
+            // Never block the caller forever when a native decoder ignores
+            // cancellation. The owner remains responsible for cleanup once the
+            // thread exits; disposing resources while it is still using them is
+            // unsafe.
+            if (!thread.Join(RenderThreadStopTimeout))
+            {
+                _logger.Error($"Render thread did not stop within {RenderThreadStopTimeout.TotalSeconds:0.#}s for monitor {_monitorId}");
+                throw new TimeoutException($"Render thread did not stop for monitor {_monitorId}");
+            }
+        }
+        _thread = null;
         _logger.Info($"Session stopped for monitor {_monitorId}");
     }
 
@@ -326,7 +334,22 @@ public sealed class PlaybackSession : IDisposable
         finally
         {
             _readyTcs?.TrySetResult(false);
+            ReleaseOwnedResources();
         }
+    }
+
+    private void ReleaseOwnedResources()
+    {
+        var renderer = _renderer;
+        _renderer = null;
+        var backend = _backend;
+        _backend = null;
+        var surface = _surface;
+        _surface = null;
+
+        try { renderer?.Dispose(); } catch (Exception ex) { _logger.Warn($"Renderer cleanup failed: {ex.Message}"); }
+        try { backend?.Dispose(); } catch (Exception ex) { _logger.Warn($"Backend cleanup failed: {ex.Message}"); }
+        try { surface?.Dispose(); } catch (Exception ex) { _logger.Warn($"Surface cleanup failed: {ex.Message}"); }
     }
 
     private void RenderLoop(CancellationToken ct)
@@ -475,12 +498,20 @@ public sealed class PlaybackSession : IDisposable
         if (_disposed) return;
         _disposed = true;
         _cts?.Cancel();
-        try { _thread?.Join(); } catch { }
+        if (_backend != null)
+        {
+            try { _backend.StopAsync().GetAwaiter().GetResult(); } catch { }
+        }
+        var thread = _thread;
+        if (thread != null && thread.IsAlive && !thread.Join(RenderThreadStopTimeout))
+        {
+            _logger.Error($"Render thread still alive during disposal for monitor {_monitorId}; retaining thread-owned resources");
+            return;
+        }
         _cts?.Dispose();
 
-        // Owned by the render thread; safe to release after it has joined.
-        _renderer?.Dispose();
-        _backend?.Dispose();
-        _surface?.Dispose();
+        // Run() owns cleanup on the render thread. If it already exited, its
+        // finally block has released all resources; if it timed out, disposing
+        // them here would violate the thread-affinity contract.
     }
 }

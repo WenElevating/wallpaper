@@ -34,7 +34,7 @@ public class AppDbContextTests : IDisposable
         var version = await context.SchemaVersions.FirstOrDefaultAsync();
         Assert.NotNull(version);
         // v2 = 播放列表表(Playlist/PlaylistMember/MonitorPlaylistAssignment)
-        Assert.Equal(2, version.Version);
+        Assert.Equal(3, version.Version);
     }
 
     [Fact]

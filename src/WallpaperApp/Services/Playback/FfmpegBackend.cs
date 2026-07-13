@@ -69,6 +69,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
     // True while a GPU frame is held out for the renderer (av_frame_unref'd on
     // the next NextFrameAsync call, since Present is synchronous).
     private bool _heldHwFrame;
+    private bool _decoderDraining;
     public TimeSpan Duration => TimeSpan.FromTicks(_durationUs * 10);
     public int VideoWidth => _width;
     public int VideoHeight => _height;
@@ -125,8 +126,14 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
                 // Read AVFormatContext->streams[_videoStreamIndex]->codecpar via offsets
                 var streamsPtr = Marshal.ReadIntPtr(_fmtCtx, FfmpegOffsets.StreamsOffset);
+                if (streamsPtr == IntPtr.Zero)
+                    return Fail("FFmpeg returned a null stream table");
                 var streamPtr = Marshal.ReadIntPtr(streamsPtr + _videoStreamIndex * IntPtr.Size);
+                if (streamPtr == IntPtr.Zero)
+                    return Fail($"FFmpeg returned a null video stream: {_videoStreamIndex}");
                 var codecPar = Marshal.ReadIntPtr(streamPtr, FfmpegOffsets.CodecparOffset);
+                if (codecPar == IntPtr.Zero)
+                    return Fail("FFmpeg returned null codec parameters");
 
                 _width = Marshal.ReadInt32(codecPar, FfmpegOffsets.WidthOffset);
                 _height = Marshal.ReadInt32(codecPar, FfmpegOffsets.HeightOffset);
@@ -166,6 +173,8 @@ public sealed class FfmpegBackend : IPlaybackBackend
                 // would waste ~16MB at 1080p / ~66MB at 4K for nothing.
 
                 _timeBase = ReadTimeBase(streamPtr);
+                if (_timeBase.Num <= 0 || _timeBase.Den <= 0)
+                    return Fail($"Invalid video stream time base: {_timeBase.Num}/{_timeBase.Den}");
                 var streamDuration = Marshal.ReadInt64(streamPtr, FfmpegOffsets.StreamDurationOffset);
                 _durationUs = streamDuration * _timeBase.Num * 1_000_000 / _timeBase.Den;
 
@@ -176,10 +185,11 @@ public sealed class FfmpegBackend : IPlaybackBackend
                 catch (Exception ex)
                 {
                     _logger.Error($"Open failed: {filePath}", ex);
+                    Close();
                     return false;
                 }
 
-                bool Fail(string msg) { _logger.Error(msg); return false; }
+                bool Fail(string msg) { _logger.Error(msg); Close(); return false; }
             }
         }, ct);
     }
@@ -230,48 +240,78 @@ public sealed class FfmpegBackend : IPlaybackBackend
     }
 
     public Task<FrameData?> NextFrameAsync(CancellationToken ct = default)
+        => Task.FromResult(DecodeNextFrame(ct));
+
+    private FrameData? DecodeNextFrame(CancellationToken ct)
     {
-        return Task.Run(() =>
+        lock (_nativeLock)
         {
-            lock (_nativeLock)
+            if (!_isOpen || !IsPlaying) return null;
+
+            // Release a previously-held GPU frame. Zero-copy keeps _avFrame alive
+            // across the renderer's synchronous Present(); by the time the next
+            // frame is requested, the texture has been copied and can be recycled.
+            if (_heldHwFrame)
             {
-                if (!_isOpen || !IsPlaying) return null;
+                FfmpegNative.av_frame_unref(_avFrame);
+                _heldHwFrame = false;
+            }
 
-                // Release a previously-held GPU frame. Zero-copy keeps _avFrame alive
-                // across the renderer's synchronous Present(); by the time the next
-                // frame is requested, the texture has been copied and can be recycled.
-                if (_heldHwFrame)
-                {
-                    FfmpegNative.av_frame_unref(_avFrame);
-                    _heldHwFrame = false;
-                }
-
-                try
+            try
+            {
+                while (true)
                 {
                     while (true)
                     {
                         ct.ThrowIfCancellationRequested();
 
-                        var ret = FfmpegNative.av_read_frame(_fmtCtx, _avPacket);
-                        if (ret < 0)
+                        int recvRet;
+                        if (_decoderDraining)
                         {
-                            EndOfStream?.Invoke(this, EventArgs.Empty);
-                            return null;
+                            // A null packet flushes delayed B-frames and other
+                            // codec-held frames. Keep receiving until the codec
+                            // reports that its delayed output is exhausted.
+                            recvRet = FfmpegNative.avcodec_receive_frame(_codecCtx, _avFrame);
+                            if (recvRet < 0)
+                            {
+                                EndOfStream?.Invoke(this, EventArgs.Empty);
+                                return null;
+                            }
+                        }
+                        else
+                        {
+                            var ret = FfmpegNative.av_read_frame(_fmtCtx, _avPacket);
+                            if (ret < 0)
+                            {
+                                var flushRet = FfmpegNative.avcodec_send_packet(_codecCtx, IntPtr.Zero);
+                                if (flushRet < 0)
+                                {
+                                    EndOfStream?.Invoke(this, EventArgs.Empty);
+                                    return null;
+                                }
+                                _decoderDraining = true;
+                                continue;
+                            }
+
+                            var pktStreamIdx = Marshal.ReadInt32(_avPacket, FfmpegOffsets.PacketStreamIndex);
+                            if (pktStreamIdx != _videoStreamIndex)
+                            {
+                                FfmpegNative.av_packet_unref(_avPacket);
+                                continue;
+                            }
+
+                            var sendRet = FfmpegNative.avcodec_send_packet(_codecCtx, _avPacket);
+                            FfmpegNative.av_packet_unref(_avPacket);
+                            if (sendRet < 0) continue;
+
+                            recvRet = FfmpegNative.avcodec_receive_frame(_codecCtx, _avFrame);
+                            if (recvRet < 0) continue;
                         }
 
-                    var pktStreamIdx = Marshal.ReadInt32(_avPacket, FfmpegOffsets.PacketStreamIndex);
-                    if (pktStreamIdx != _videoStreamIndex)
-                    {
-                        FfmpegNative.av_packet_unref(_avPacket);
-                        continue;
-                    }
-
-                    var sendRet = FfmpegNative.avcodec_send_packet(_codecCtx, _avPacket);
-                    FfmpegNative.av_packet_unref(_avPacket);
-                    if (sendRet < 0) continue;
-
-                    var recvRet = FfmpegNative.avcodec_receive_frame(_codecCtx, _avFrame);
-                    if (recvRet < 0) continue;
+                        if (recvRet < 0)
+                        {
+                            continue;
+                        }
 
                     // Hardware-decoded frames arrive as AV_PIX_FMT_D3D11 (a GPU
                     // texture; reference frames live in VRAM). Transfer to a
@@ -299,6 +339,12 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
                         if (_swFrame == IntPtr.Zero)
                             _swFrame = FfmpegNative.av_frame_alloc();
+                        if (_swFrame == IntPtr.Zero)
+                        {
+                            _logger.Warn("FFmpeg software transfer frame allocation failed");
+                            FfmpegNative.av_frame_unref(_avFrame);
+                            return null;
+                        }
                         FfmpegNative.av_frame_unref(_swFrame);
                         var tret = FfmpegNative.av_hwframe_transfer_data(_swFrame, _avFrame, 0);
                         if (tret < 0)
@@ -396,18 +442,18 @@ public sealed class FfmpegBackend : IPlaybackBackend
                     var ptsUs = pts * _timeBase.Num * 1_000_000 / _timeBase.Den;
                     Position = TimeSpan.FromMicroseconds(ptsUs);
 
-                        return new FrameData(activeBuffer, _width, _height, _stride, ptsUs);
+                    return new FrameData(activeBuffer, _width, _height, _stride, ptsUs);
                     }
                 }
-                catch (OperationCanceledException) { return null; }
+            }
+            catch (OperationCanceledException) { return null; }
                 catch (Exception ex)
                 {
                     _logger.Warn($"Frame decode error: {ex.Message}");
                     return null;
                 }
             }
-        }, ct);
-    }
+        }
 
     // Opens the codec, preferring D3D11VA hardware decode and transparently
     // retrying software if the hardware open fails. Sets _useHardware to reflect
@@ -507,6 +553,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
         _decodedHw = false;
         _warnedSwFallback = false;
         _heldHwFrame = false;
+        _decoderDraining = false;
         if (_fmtCtx != IntPtr.Zero) { FfmpegNative.avformat_close_input(ref _fmtCtx); }
         if (_bufferA != IntPtr.Zero) { FfmpegNative.av_free(_bufferA); _bufferA = IntPtr.Zero; }
         if (_bufferB != IntPtr.Zero) { FfmpegNative.av_free(_bufferB); _bufferB = IntPtr.Zero; }

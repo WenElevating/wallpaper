@@ -15,10 +15,8 @@ public sealed class PlaylistServiceTests : IDisposable
 
     public PlaylistServiceTests()
     {
-        // In-memory SQLite, single shared context for the fixture. PlaylistService
-        // is Transient in production (one context per service instance); here a
-        // single context keeps the tracked-entity graph simple and matches a
-        // single consumer's lifetime.
+        // In-memory SQLite connection stays open for short-lived contexts created
+        // by PlaylistService on each operation.
         _connection = new SqliteConnection("Data Source=:memory:");
         _connection.Open();
         var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
@@ -29,10 +27,16 @@ public sealed class PlaylistServiceTests : IDisposable
         _logger = new FileLogger(tempDir);
     }
 
+    private AppDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>().UseSqlite(_connection).Options;
+        return new AppDbContext(options);
+    }
+
     [Fact]
     public async Task Create_PersistsAndCanBeRead()
     {
-        var svc = new PlaylistService(_logger, _db);
+        var svc = new PlaylistService(_logger, CreateContext);
         var id = await svc.CreateAsync("MyList");
         var all = await svc.GetAllAsync();
 
@@ -44,7 +48,7 @@ public sealed class PlaylistServiceTests : IDisposable
     [Fact]
     public async Task AddMembers_PersistsInOrder()
     {
-        var svc = new PlaylistService(_logger, _db);
+        var svc = new PlaylistService(_logger, CreateContext);
         var id = await svc.CreateAsync("L");
         var w1 = Guid.NewGuid();
         var w2 = Guid.NewGuid();
@@ -61,7 +65,7 @@ public sealed class PlaylistServiceTests : IDisposable
     [Fact]
     public async Task NextIndex_Sequential_WrapsAround()
     {
-        var svc = new PlaylistService(_logger, _db);
+        var svc = new PlaylistService(_logger, CreateContext);
         var id = await svc.CreateAsync("L");
         await svc.AddMemberAsync(id, Guid.NewGuid());
         await svc.AddMemberAsync(id, Guid.NewGuid());
@@ -74,7 +78,7 @@ public sealed class PlaylistServiceTests : IDisposable
     [Fact]
     public async Task RemoveMember_RenumbersOrder()
     {
-        var svc = new PlaylistService(_logger, _db);
+        var svc = new PlaylistService(_logger, CreateContext);
         var id = await svc.CreateAsync("L");
         var w1 = Guid.NewGuid();
         var w2 = Guid.NewGuid();
@@ -95,7 +99,7 @@ public sealed class PlaylistServiceTests : IDisposable
     [Fact]
     public async Task AssignMonitor_SetsAndPersists()
     {
-        var svc = new PlaylistService(_logger, _db);
+        var svc = new PlaylistService(_logger, CreateContext);
         var id = await svc.CreateAsync("L");
         await svc.AssignMonitorAsync("MON-1", id);
         var bound = await svc.GetPlaylistForMonitorAsync("MON-1");
@@ -108,7 +112,7 @@ public sealed class PlaylistServiceTests : IDisposable
     [Fact]
     public async Task SaveLastIndex_Persists()
     {
-        var svc = new PlaylistService(_logger, _db);
+        var svc = new PlaylistService(_logger, CreateContext);
         var id = await svc.CreateAsync("L");
         await svc.SaveLastIndexAsync(id, 5);
         var pl = await svc.GetByIdAsync(id);
@@ -118,7 +122,7 @@ public sealed class PlaylistServiceTests : IDisposable
     [Fact]
     public async Task Update_PersistsNameIntervalAndShuffle()
     {
-        var svc = new PlaylistService(_logger, _db);
+        var svc = new PlaylistService(_logger, CreateContext);
         var id = await svc.CreateAsync("Old");
 
         await svc.UpdateAsync(id, "New", 17, true);
@@ -132,7 +136,7 @@ public sealed class PlaylistServiceTests : IDisposable
     [Fact]
     public async Task ReorderMembers_PersistsNewOrder()
     {
-        var svc = new PlaylistService(_logger, _db);
+        var svc = new PlaylistService(_logger, CreateContext);
         var id = await svc.CreateAsync("L");
         var w1 = Guid.NewGuid();
         var w2 = Guid.NewGuid();
@@ -155,7 +159,7 @@ public sealed class PlaylistServiceTests : IDisposable
     [Fact]
     public async Task GetMonitorKeyForPlaylist_ReturnsAssignment()
     {
-        var svc = new PlaylistService(_logger, _db);
+        var svc = new PlaylistService(_logger, CreateContext);
         var id = await svc.CreateAsync("L");
         await svc.AssignMonitorAsync("MON-1", id);
 

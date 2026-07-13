@@ -246,6 +246,7 @@ public sealed class DxgiRenderer : IFrameRenderer
         if (_device is null || _context is null || _swapChain is null) return false;
 
         ID3D11Texture2D? decodedTex = null;
+        var textureRefAdded = false;
         try
         {
             Step("ensure-rtv", () => EnsureRtv());
@@ -253,17 +254,22 @@ public sealed class DxgiRenderer : IFrameRenderer
             // FromPointer wraps the pointer for Dispose(); the finally block's
             // decodedTex.Dispose() releases the ref, balancing our AddRef.
             Marshal.AddRef(frame.Texture);
+            textureRefAdded = true;
             decodedTex = MarshallingHelpers.FromPointer<ID3D11Texture2D>(frame.Texture);
             if (decodedTex is null)
-            {
-                Marshal.Release(frame.Texture);
                 return false;
-            }
         }
         catch (Exception ex)
         {
             _logger.Warn($"zc pre-copy threw: {ex.Message}");
             throw;
+        }
+        finally
+        {
+            // If wrapper creation failed, there is no COM object whose Dispose
+            // can balance AddRef. Release the raw reference on every early path.
+            if (textureRefAdded && decodedTex is null)
+                Marshal.Release(frame.Texture);
         }
 
         // Re-create the zero-copy resources if they were released after a device

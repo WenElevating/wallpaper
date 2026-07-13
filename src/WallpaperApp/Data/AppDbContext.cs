@@ -44,6 +44,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.SourceType).IsRequired().HasMaxLength(10);
             e.Property(x => x.OriginalFileName).HasMaxLength(500);
             e.Property(x => x.ManagedFilePath).IsRequired().HasMaxLength(1000);
+            e.HasIndex(x => x.ManagedFilePath).IsUnique();
             e.Property(x => x.ThumbnailPath).HasMaxLength(1000);
             e.Property(x => x.ContainerFormat).HasMaxLength(20);
             e.Property(x => x.CodecSummary).HasMaxLength(100);
@@ -94,7 +95,7 @@ public class AppDbContext : DbContext
     {
         await Database.EnsureCreatedAsync();
         var current = await SchemaVersions.FirstOrDefaultAsync();
-        var targetVersion = 2;
+        var targetVersion = 3;
         if (current == null)
         {
             // 全新库:EnsureCreatedAsync 已按 OnModelCreating 建好所有表(含播放列表),
@@ -137,6 +138,42 @@ public class AppDbContext : DbContext
                     );
                     CREATE UNIQUE INDEX IF NOT EXISTS ""IX_MonitorPlaylistAssignments_MonitorKey""
                         ON ""MonitorPlaylistAssignments"" (""MonitorKey"");
+                ");
+            }
+            if (current.Version < 3)
+            {
+                // v3: prevent duplicate content records at the database boundary.
+                // Keep the oldest row and redirect playlist references before
+                // deleting duplicate rows.
+                await Database.ExecuteSqlRawAsync(@"
+                    UPDATE ""PlaylistMembers""
+                    SET ""WallpaperId"" = (
+                        SELECT keep.""Id""
+                        FROM ""WallpaperItems"" AS keep
+                        JOIN ""WallpaperItems"" AS duplicate
+                            ON duplicate.""Id"" = ""PlaylistMembers"".""WallpaperId""
+                        WHERE keep.""ManagedFilePath"" = duplicate.""ManagedFilePath""
+                        ORDER BY keep.rowid
+                        LIMIT 1
+                    )
+                    WHERE ""WallpaperId"" IN (
+                        SELECT duplicate.""Id""
+                        FROM ""WallpaperItems"" AS duplicate
+                        WHERE EXISTS (
+                            SELECT 1
+                            FROM ""WallpaperItems"" AS keep
+                            WHERE keep.""ManagedFilePath"" = duplicate.""ManagedFilePath""
+                              AND keep.rowid < duplicate.rowid
+                        )
+                    );
+                    DELETE FROM ""WallpaperItems""
+                    WHERE rowid NOT IN (
+                        SELECT MIN(rowid)
+                        FROM ""WallpaperItems""
+                        GROUP BY ""ManagedFilePath""
+                    );
+                    CREATE UNIQUE INDEX IF NOT EXISTS ""IX_WallpaperItems_ManagedFilePath""
+                        ON ""WallpaperItems"" (""ManagedFilePath"");
                 ");
             }
             current.Version = targetVersion;
