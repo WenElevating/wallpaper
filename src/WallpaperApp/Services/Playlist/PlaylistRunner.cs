@@ -113,10 +113,14 @@ public sealed class PlaylistRunner
 
     private int ClampIndex(int i) => i < 0 || i >= _playlist.Members.Count ? 0 : i;
 
-    public void Stop()
+    public async Task StopAsync()
     {
         _timer.Stop();
         _started = false;
+        await _tickGate.WaitAsync();
+        _tickGate.Release();
         _logger.Info($"Playlist runner stopped on {_monitorKey}");
     }
+
+    public void Stop() => StopAsync().GetAwaiter().GetResult();
 }

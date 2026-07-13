@@ -278,7 +278,7 @@ public partial class App : Application
             // may still dispatch playback or persistence work during shutdown.
             _powerAware?.Dispose();
             _remoteSession?.Dispose();
-            _playlists?.StopAll();
+            _playlists?.StopAllAsync().GetAwaiter().GetResult();
             _explorerWatcher?.Dispose();
 
             var fullscreen = _serviceProvider.GetService<FullscreenDetector>();

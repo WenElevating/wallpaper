@@ -133,6 +133,37 @@ public sealed class PlaylistRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task StopAsync_WaitsForAnInFlightTick()
+    {
+        var ids = new[] { Guid.NewGuid(), Guid.NewGuid() };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+        var runner = new PlaylistRunner(_logger, "MON-1", MakePlaylist(ids),
+            async _ =>
+            {
+                if (Interlocked.Increment(ref calls) == 2)
+                {
+                    entered.SetResult();
+                    await release.Task;
+                }
+                return true;
+            },
+            _ => Task.CompletedTask);
+
+        await runner.StartAsync(0);
+        var tick = runner.TickAsync();
+        await entered.Task;
+        var stop = runner.StopAsync();
+
+        await Task.Delay(50);
+        Assert.False(stop.IsCompleted);
+
+        release.SetResult();
+        await Task.WhenAll(tick, stop);
+    }
+
+    [Fact]
     public async Task EmptyPlaylist_NoSwitchNoThrow()
     {
         var switched = false;
