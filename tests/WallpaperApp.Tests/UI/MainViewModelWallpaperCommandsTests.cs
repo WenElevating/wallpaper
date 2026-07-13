@@ -156,7 +156,8 @@ public sealed class MainViewModelWallpaperCommandsTests : IDisposable
         Assert.Equal(DecoderFrameDiscard.NonReference, CurrentPolicy(vm).DecoderDiscard);
 
         vm.SelectedPerformanceProfile = WallpaperPerformanceProfile.Quality;
-        await WaitForAsync(async () => (await settings.LoadAsync()).PerformanceProfile == WallpaperPerformanceProfile.Quality);
+        await vm.LastSettingsSave;
+        Assert.Equal(WallpaperPerformanceProfile.Quality, (await settings.LoadAsync()).PerformanceProfile);
 
         Assert.Equal(WallpaperPerformanceProfile.Quality, vm.SelectedPerformanceProfile);
         Assert.Null(CurrentPolicy(vm).MaxPresentFps);
@@ -169,15 +170,6 @@ public sealed class MainViewModelWallpaperCommandsTests : IDisposable
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
         Assert.NotNull(field);
         return Assert.IsType<PlaybackPerformancePolicy>(field.GetValue(vm.PlaybackForTests));
-    }
-
-    private static async Task WaitForAsync(Func<Task<bool>> condition)
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-        while (!await condition())
-        {
-            await Task.Delay(25, cts.Token);
-        }
     }
 
     private async Task<WallpaperItem> SeedWallpaperAsync(LibraryService library, string name = "clip")

@@ -66,7 +66,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(IsPauseOnRemoteSession));
         OnPropertyChanged(nameof(SelectedPerformanceProfile));
         _playback.UpdatePerformancePolicy(PlaybackPerformancePolicy.FromProfile(Settings.PerformanceProfile));
-        _ = SaveSettingsAsync(Settings);
+        _lastSettingsSave = SaveSettingsAsync(Settings);
     }
 
     private async Task SaveSettingsAsync(AppSettings settings)

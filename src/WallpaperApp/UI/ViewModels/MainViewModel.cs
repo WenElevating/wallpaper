@@ -36,6 +36,9 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
     private readonly PlaylistService _playlistService;
     private readonly RandomWallpaperSwitcher _shuffler;
     private readonly SemaphoreSlim _settingsSaveGate = new(1, 1);
+    private Task _lastSettingsSave = Task.CompletedTask;
+
+    internal Task LastSettingsSave => _lastSettingsSave;
     // Coordinator is attached after construction (its switcher needs this ViewModel
     // instance, creating a cycle; App.xaml.cs calls AttachPlaylistCoordinator).
     private PlaylistCoordinator? _playlists;

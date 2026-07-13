@@ -288,7 +288,8 @@ public sealed class PlaybackSession : IDisposable
                 _surface.Height > 0 ? _surface.Height : _height,
                 _logger);
 
-            // 2. Open the file (with fallback backend if the primary fails).
+            // 2. Open the file. A fallback is optional and only supplied by a
+            // composition root that owns a real, tested alternate backend.
             _backend = _createBackend();
             if (!_backend.OpenAsync(_filePath, ct).GetAwaiter().GetResult())
             {
