@@ -69,6 +69,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
     // True while a GPU frame is held out for the renderer (av_frame_unref'd on
     // the next NextFrameAsync call, since Present is synchronous).
     private bool _heldHwFrame;
+    private bool _decoderDraining;
     public TimeSpan Duration => TimeSpan.FromTicks(_durationUs * 10);
     public int VideoWidth => _width;
     public int VideoHeight => _height;
@@ -252,26 +253,53 @@ public sealed class FfmpegBackend : IPlaybackBackend
                     {
                         ct.ThrowIfCancellationRequested();
 
-                        var ret = FfmpegNative.av_read_frame(_fmtCtx, _avPacket);
-                        if (ret < 0)
+                        int recvRet;
+                        if (_decoderDraining)
                         {
-                            EndOfStream?.Invoke(this, EventArgs.Empty);
-                            return null;
+                            // A null packet flushes delayed B-frames and other
+                            // codec-held frames. Keep receiving until the codec
+                            // reports that its delayed output is exhausted.
+                            recvRet = FfmpegNative.avcodec_receive_frame(_codecCtx, _avFrame);
+                            if (recvRet < 0)
+                            {
+                                EndOfStream?.Invoke(this, EventArgs.Empty);
+                                return null;
+                            }
+                        }
+                        else
+                        {
+                            var ret = FfmpegNative.av_read_frame(_fmtCtx, _avPacket);
+                            if (ret < 0)
+                            {
+                                var flushRet = FfmpegNative.avcodec_send_packet(_codecCtx, IntPtr.Zero);
+                                if (flushRet < 0)
+                                {
+                                    EndOfStream?.Invoke(this, EventArgs.Empty);
+                                    return null;
+                                }
+                                _decoderDraining = true;
+                                continue;
+                            }
+
+                            var pktStreamIdx = Marshal.ReadInt32(_avPacket, FfmpegOffsets.PacketStreamIndex);
+                            if (pktStreamIdx != _videoStreamIndex)
+                            {
+                                FfmpegNative.av_packet_unref(_avPacket);
+                                continue;
+                            }
+
+                            var sendRet = FfmpegNative.avcodec_send_packet(_codecCtx, _avPacket);
+                            FfmpegNative.av_packet_unref(_avPacket);
+                            if (sendRet < 0) continue;
+
+                            recvRet = FfmpegNative.avcodec_receive_frame(_codecCtx, _avFrame);
+                            if (recvRet < 0) continue;
                         }
 
-                    var pktStreamIdx = Marshal.ReadInt32(_avPacket, FfmpegOffsets.PacketStreamIndex);
-                    if (pktStreamIdx != _videoStreamIndex)
-                    {
-                        FfmpegNative.av_packet_unref(_avPacket);
-                        continue;
-                    }
-
-                    var sendRet = FfmpegNative.avcodec_send_packet(_codecCtx, _avPacket);
-                    FfmpegNative.av_packet_unref(_avPacket);
-                    if (sendRet < 0) continue;
-
-                    var recvRet = FfmpegNative.avcodec_receive_frame(_codecCtx, _avFrame);
-                    if (recvRet < 0) continue;
+                        if (recvRet < 0)
+                        {
+                            continue;
+                        }
 
                     // Hardware-decoded frames arrive as AV_PIX_FMT_D3D11 (a GPU
                     // texture; reference frames live in VRAM). Transfer to a
@@ -507,6 +535,7 @@ public sealed class FfmpegBackend : IPlaybackBackend
         _decodedHw = false;
         _warnedSwFallback = false;
         _heldHwFrame = false;
+        _decoderDraining = false;
         if (_fmtCtx != IntPtr.Zero) { FfmpegNative.avformat_close_input(ref _fmtCtx); }
         if (_bufferA != IntPtr.Zero) { FfmpegNative.av_free(_bufferA); _bufferA = IntPtr.Zero; }
         if (_bufferB != IntPtr.Zero) { FfmpegNative.av_free(_bufferB); _bufferB = IntPtr.Zero; }
