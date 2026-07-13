@@ -17,14 +17,13 @@ public sealed partial class MainViewModel
     {
         Settings = Settings with { Hotkeys = bindings };
         _hotkeys.Apply(bindings);
-        try { await _settings.SaveAsync(Settings); }
-        catch (Exception ex) { _logger.Warn($"Failed to save hotkey settings: {ex.Message}"); }
+        await SaveSettingsAsync(Settings);
     }
 
     public async Task SetLanguageAsync(string code)
     {
         Settings = Settings with { Language = code };
-        await _settings.SaveAsync(Settings);
+        await SaveSettingsAsync(Settings);
         LocalizationService.ApplyCulture(code);
         OnPropertyChanged(nameof(HeaderTitle));
         _logger.Info($"Language set to {code}");

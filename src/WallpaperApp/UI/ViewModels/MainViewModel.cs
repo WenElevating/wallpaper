@@ -761,8 +761,7 @@ public sealed partial class MainViewModel : INotifyPropertyChanged
             // Persist and refresh the display + in-memory wallpaper paths.
             Settings = Settings with { LibraryRoot = newRoot };
             LibraryRootDisplay = newRoot;
-            try { await _settings.SaveAsync(Settings); }
-            catch (Exception ex) { _logger.Warn($"Failed to save LibraryRoot: {ex.Message}"); }
+            await SaveSettingsAsync(Settings);
 
             // Update in-memory paths so cards/posters resolve from the new location.
             foreach (var w in Wallpapers)
