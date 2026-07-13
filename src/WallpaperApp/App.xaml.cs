@@ -260,6 +260,22 @@ public partial class App : Application
 
         if (_serviceProvider != null)
         {
+            // Stop producers and callbacks before releasing the resources they
+            // can touch. In particular, playlist ticks and monitor detectors
+            // may still dispatch playback or persistence work during shutdown.
+            _powerAware?.Dispose();
+            _remoteSession?.Dispose();
+            _playlists?.StopAll();
+
+            var fullscreen = _serviceProvider.GetService<FullscreenDetector>();
+            fullscreen?.Dispose();
+
+            var visibility = _serviceProvider.GetService<WallpaperVisibilityDetector>();
+            visibility?.Dispose();
+
+            var hotkeys = _serviceProvider.GetService<GlobalHotkeyService>();
+            hotkeys?.Dispose();
+
             var playback = _serviceProvider.GetService<PlaybackManager>();
             playback?.Dispose();
 
@@ -270,19 +286,6 @@ public partial class App : Application
 
             var desktop = _serviceProvider.GetService<DesktopHost>();
             desktop?.Dispose();
-
-            var fullscreen = _serviceProvider.GetService<FullscreenDetector>();
-            fullscreen?.Dispose();
-
-            var visibility = _serviceProvider.GetService<WallpaperVisibilityDetector>();
-            visibility?.Dispose();
-
-            _powerAware?.Dispose();
-            _remoteSession?.Dispose();
-            _playlists?.StopAll();
-
-            var hotkeys = _serviceProvider.GetService<GlobalHotkeyService>();
-            hotkeys?.Dispose();
 
             var logger = _serviceProvider.GetService<FileLogger>();
             logger?.Dispose();
