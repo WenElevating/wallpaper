@@ -7,7 +7,6 @@ namespace WallpaperApp.Services.Desktop;
 public sealed class WallpaperWindow : IWallpaperSurface
 {
     private const string ClassName = "WallpaperSurface";
-    private const uint WS_POPUP = 0x80000000;
     private const uint WS_CHILD = 0x40000000;
     private const uint WS_VISIBLE = 0x10000000;
     private const uint WM_NCHITTEST = 0x0084;
@@ -69,33 +68,13 @@ public sealed class WallpaperWindow : IWallpaperSurface
                 LogWindowDiagnostics(workerW);
                 return;
             }
-            _logger.Warn("CreateWindowEx as WorkerW child failed; using top-level fallback");
+            _logger.Warn("CreateWindowEx as WorkerW child failed; refusing unsafe top-level fallback");
         }
         else
         {
-            _logger.Warn("Desktop WorkerW not found; using top-level fallback");
+            _logger.Warn("Desktop WorkerW not found; refusing unsafe top-level fallback");
         }
-
-        // FALLBACK PATH: top-level popup (only when WorkerW cannot be located).
-        _hwnd = NativeMethods.CreateWindowExW(
-            (uint)NativeMethods.WS_EX_TOOLWINDOW | (uint)NativeMethods.WS_EX_NOACTIVATE,
-            ClassName, null,
-            WS_POPUP | WS_VISIBLE,
-            0, 0, sw, sh,
-            IntPtr.Zero, IntPtr.Zero, hInstance, IntPtr.Zero);
-
-        if (_hwnd == IntPtr.Zero)
-        {
-            _logger.Error("Failed to create wallpaper window");
-            return;
-        }
-
-        NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_SHOW);
-        NativeMethods.SetWindowPos(
-            _hwnd, NativeMethods.HWND_BOTTOM,
-            0, 0, sw, sh,
-            NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
-        LogWindowDiagnostics(IntPtr.Zero);
+        _logger.Error("No safe desktop wallpaper surface is available");
     }
 
     private void RegisterClassIfNeeded()
