@@ -192,4 +192,69 @@ public class LibraryServiceTests : IDisposable
         Assert.True(await service.DeleteAsync(item.Id));
         Assert.False(Directory.Exists(variantDir));
     }
+
+    [Fact]
+    public async Task DeleteAsync_WhenDatabaseDeleteFails_PreservesFilesAndRow()
+    {
+        var service = CreateService();
+        var item = await SeedWallpaperAsync(service, "protected");
+
+        await using (var db = CreateContext())
+        {
+            await db.Database.ExecuteSqlRawAsync("CREATE TRIGGER BlockWallpaperDelete BEFORE DELETE ON WallpaperItems BEGIN SELECT RAISE(ABORT, 'blocked'); END;");
+        }
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => service.DeleteAsync(item.Id));
+
+        Assert.True(File.Exists(item.ManagedFilePath));
+        Assert.NotNull(await service.GetByIdAsync(item.Id));
+    }
+
+    [Fact]
+    public async Task MigrateToAsync_ReplacesPreExistingIncompleteDestination()
+    {
+        var service = CreateService();
+        var item = await SeedWallpaperAsync(service, "migrated");
+        var newRoot = Path.Combine(_testLibDir, "new-root");
+        var newLibraryDir = LibraryService.ResolveLibraryDir(newRoot);
+        Directory.CreateDirectory(newLibraryDir);
+        var destination = Path.Combine(newLibraryDir, Path.GetFileName(item.ManagedFilePath));
+        await File.WriteAllBytesAsync(destination, new byte[] { 0xFF });
+
+        var result = await service.MigrateToAsync(newRoot);
+
+        Assert.Equal(1, result.success);
+        Assert.Equal(new byte[] { 0x00 }, await File.ReadAllBytesAsync(destination));
+        Assert.False(File.Exists(item.ManagedFilePath));
+    }
+
+    [Fact]
+    public async Task WallpaperItem_ManagedFilePathHasDatabaseUniqueConstraint()
+    {
+        await using var first = CreateContext();
+        var path = Path.Combine(_testLibDir, "same.mp4");
+        first.WallpaperItems.Add(new WallpaperItem
+        {
+            DisplayName = "first",
+            SourceType = "Video",
+            OriginalFileName = "first.mp4",
+            ManagedFilePath = path,
+            ContainerFormat = "mp4",
+            ValidationStatus = "Valid"
+        });
+        await first.SaveChangesAsync();
+
+        await using var second = CreateContext();
+        second.WallpaperItems.Add(new WallpaperItem
+        {
+            DisplayName = "second",
+            SourceType = "Video",
+            OriginalFileName = "second.mp4",
+            ManagedFilePath = path,
+            ContainerFormat = "mp4",
+            ValidationStatus = "Valid"
+        });
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => second.SaveChangesAsync());
+    }
 }

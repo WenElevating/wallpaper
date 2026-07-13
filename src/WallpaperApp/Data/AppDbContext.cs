@@ -44,6 +44,7 @@ public class AppDbContext : DbContext
             e.Property(x => x.SourceType).IsRequired().HasMaxLength(10);
             e.Property(x => x.OriginalFileName).HasMaxLength(500);
             e.Property(x => x.ManagedFilePath).IsRequired().HasMaxLength(1000);
+            e.HasIndex(x => x.ManagedFilePath).IsUnique();
             e.Property(x => x.ThumbnailPath).HasMaxLength(1000);
             e.Property(x => x.ContainerFormat).HasMaxLength(20);
             e.Property(x => x.CodecSummary).HasMaxLength(100);
@@ -137,6 +138,21 @@ public class AppDbContext : DbContext
                     );
                     CREATE UNIQUE INDEX IF NOT EXISTS ""IX_MonitorPlaylistAssignments_MonitorKey""
                         ON ""MonitorPlaylistAssignments"" (""MonitorKey"");
+                ");
+            }
+            if (current.Version <= targetVersion)
+            {
+                // v3: prevent duplicate content records at the database boundary.
+                // Keep the oldest row if an older database already contains duplicates.
+                await Database.ExecuteSqlRawAsync(@"
+                    DELETE FROM ""WallpaperItems""
+                    WHERE rowid NOT IN (
+                        SELECT MIN(rowid)
+                        FROM ""WallpaperItems""
+                        GROUP BY ""ManagedFilePath""
+                    );
+                    CREATE UNIQUE INDEX IF NOT EXISTS ""IX_WallpaperItems_ManagedFilePath""
+                        ON ""WallpaperItems"" (""ManagedFilePath"");
                 ");
             }
             current.Version = targetVersion;
