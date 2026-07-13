@@ -190,6 +190,13 @@ public sealed class D2dRenderer : IFrameRenderer
     {
         ReleaseBitmap();
         ReleaseRenderTarget();
+        // ReleaseBitmap clears the native object, but the dimensions must also
+        // be reset so the next frame recreates the bitmap even when its size is
+        // unchanged. Otherwise CopyFromMemory can target a null bitmap after
+        // D2DERR_RECREATE_TARGET.
+        _frameWidth = 0;
+        _frameHeight = 0;
+        _frameStride = 0;
         if (_factory != IntPtr.Zero)
         {
             D2D1.Release(_factory);

@@ -241,7 +241,11 @@ public sealed class DxgiRenderer : IFrameRenderer
         // The pre-"copy" calls (render targets + borrowing the decoded texture)
         // are the ones we couldn't see before. Wrap them so the next run shows
         // exactly which throws.
-        ID3D11Texture2D decodedTex;
+        // Validate the owning resources before taking a COM reference. Any
+        // early return after AddRef must be covered by the finally below.
+        if (_device is null || _context is null || _swapChain is null) return false;
+
+        ID3D11Texture2D? decodedTex = null;
         try
         {
             Step("ensure-rtv", () => EnsureRtv());
@@ -250,14 +254,17 @@ public sealed class DxgiRenderer : IFrameRenderer
             // decodedTex.Dispose() releases the ref, balancing our AddRef.
             Marshal.AddRef(frame.Texture);
             decodedTex = MarshallingHelpers.FromPointer<ID3D11Texture2D>(frame.Texture);
+            if (decodedTex is null)
+            {
+                Marshal.Release(frame.Texture);
+                return false;
+            }
         }
         catch (Exception ex)
         {
             _logger.Warn($"zc pre-copy threw: {ex.Message}");
             throw;
         }
-
-        if (_device is null || _context is null || _swapChain is null) return false;
 
         // Re-create the zero-copy resources if they were released after a device
         // loss (shaders/sampler/NV12). Bytecode is cached, so this is cheap.
@@ -272,7 +279,7 @@ public sealed class DxgiRenderer : IFrameRenderer
         {
             // CopySubresourceRegion on video textures indexes the array slice and
             // copies the entire planar surface (both planes) in one call.
-            Step("copy", () => _context.CopySubresourceRegion(_nv12Tex!, 0, 0, 0, 0, decodedTex, frame.TextureIndex, null));
+            Step("copy", () => _context.CopySubresourceRegion(_nv12Tex!, 0, 0, 0, 0, decodedTex!, frame.TextureIndex, null));
 
             var rtv = _rtvs[(int)_swapChain.CurrentBackBufferIndex];
             if (rtv is null) return false;
@@ -292,7 +299,7 @@ public sealed class DxgiRenderer : IFrameRenderer
             if (dbg) _logger.Info("zc step: present");
             presentHr = _swapChain.Present(1, PresentFlags.None);
         }
-        finally { decodedTex.Dispose(); }
+        finally { decodedTex?.Dispose(); }
 
         _presentCount++;
         if (_presentCount <= 3 || _presentCount % 300 == 0)
