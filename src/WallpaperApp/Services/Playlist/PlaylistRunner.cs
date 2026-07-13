@@ -20,6 +20,7 @@ public sealed class PlaylistRunner
     private readonly Func<Guid, Task<bool>> _switchTo;   // wallpaperId -> success
     private readonly Func<int, Task> _saveIndex;          // persist index
     private readonly DispatcherTimer _timer;
+    private readonly SemaphoreSlim _tickGate = new(1, 1);
     private int _currentIndex;
     private bool _started;
 
@@ -65,17 +66,26 @@ public sealed class PlaylistRunner
     public async Task TickAsync()
     {
         if (!_started || _playlist.Members.Count == 0) return;
-        _currentIndex = NextIndex();
-        try { await SwitchCurrentAsync(); }
-        catch (Exception ex)
+        await _tickGate.WaitAsync();
+        try
         {
-            // The switcher contract is Task<bool>, but assign/Guid.Parse can throw;
-            // never let a tick exception kill this monitor's rotation (the timer
-            // callback is async-void, so a throw would silently stop the timer).
-            _logger.Warn($"Playlist tick failed on {_monitorKey}: {ex.Message}");
+            if (!_started) return;
+            _currentIndex = NextIndex();
+            try { await SwitchCurrentAsync(); }
+            catch (Exception ex)
+            {
+                // The switcher contract is Task<bool>, but assign/Guid.Parse can throw;
+                // never let a tick exception kill this monitor's rotation (the timer
+                // callback is async-void, so a throw would silently stop the timer).
+                _logger.Warn($"Playlist tick failed on {_monitorKey}: {ex.Message}");
+            }
+            try { await _saveIndex(_currentIndex); }
+            catch (Exception ex) { _logger.Warn($"Failed to save playlist index: {ex.Message}"); }
         }
-        try { await _saveIndex(_currentIndex); }
-        catch (Exception ex) { _logger.Warn($"Failed to save playlist index: {ex.Message}"); }
+        finally
+        {
+            _tickGate.Release();
+        }
     }
 
     private async Task SwitchCurrentAsync()

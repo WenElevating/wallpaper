@@ -93,6 +93,46 @@ public sealed class PlaylistRunnerTests : IDisposable
     }
 
     [Fact]
+    public async Task ConcurrentTicks_DoNotRunSwitchesConcurrently()
+    {
+        var ids = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() };
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var active = 0;
+        var maxActive = 0;
+        var runner = new PlaylistRunner(_logger, "MON-1", MakePlaylist(ids),
+            async _ =>
+            {
+                var now = Interlocked.Increment(ref active);
+                InterlockedExtensions.Max(ref maxActive, now);
+                entered.SetResult();
+                await release.Task;
+                Interlocked.Decrement(ref active);
+                return true;
+            },
+            _ => Task.CompletedTask);
+
+        var start = runner.StartAsync(0);
+        await entered.Task;
+        release.SetResult();
+        await start;
+
+        entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var first = runner.TickAsync();
+        await entered.Task;
+        var second = runner.TickAsync();
+
+        await Task.Delay(50);
+        Assert.Equal(1, maxActive);
+
+        release.SetResult();
+        await Task.WhenAll(first, second);
+        Assert.Equal(1, maxActive);
+        runner.Stop();
+    }
+
+    [Fact]
     public async Task EmptyPlaylist_NoSwitchNoThrow()
     {
         var switched = false;
@@ -132,5 +172,18 @@ public sealed class PlaylistRunnerTests : IDisposable
     {
         _logger.Dispose();
         if (Directory.Exists(_tempDir)) Directory.Delete(_tempDir, recursive: true);
+    }
+}
+
+internal static class InterlockedExtensions
+{
+    public static void Max(ref int location, int value)
+    {
+        while (true)
+        {
+            var current = Volatile.Read(ref location);
+            if (current >= value) return;
+            if (Interlocked.CompareExchange(ref location, value, current) == current) return;
+        }
     }
 }
