@@ -37,6 +37,10 @@ public sealed class D2dRendererSmokeTests
 
     private static string ResolveProbePath()
     {
+        var coLocatedProbe = Path.Combine(AppContext.BaseDirectory, "WallpaperApp.RenderProbe.dll");
+        if (File.Exists(coLocatedProbe))
+            return coLocatedProbe;
+
         var repoRoot = FindRepoRoot();
         var probePath = Path.Combine(
             repoRoot,
@@ -53,6 +57,13 @@ public sealed class D2dRendererSmokeTests
 
     private static string FindRepoRoot()
     {
+        var configuredRoot = Environment.GetEnvironmentVariable("WALLPAPER_REPO_ROOT");
+        if (!string.IsNullOrWhiteSpace(configuredRoot) &&
+            File.Exists(Path.Combine(configuredRoot, "WallpaperApp.sln")))
+        {
+            return configuredRoot;
+        }
+
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir != null)
         {
