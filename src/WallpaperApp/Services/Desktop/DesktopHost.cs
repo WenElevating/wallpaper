@@ -16,11 +16,19 @@ public sealed class DesktopHost : IDisposable
     private readonly FileLogger _logger;
     private readonly System.Timers.Timer _retryTimer;
     private readonly List<WallpaperWindow> _wallpaperWindows = new();
+    private readonly object _windowsLock = new();
     private bool _isAttached;
     private bool _disposed;
 
-    public bool IsAttached => _isAttached;
-    public IReadOnlyList<WallpaperWindow> WallpaperWindows => _wallpaperWindows.AsReadOnly();
+    public bool IsAttached
+    {
+        get { lock (_windowsLock) return _isAttached; }
+    }
+
+    public IReadOnlyList<WallpaperWindow> WallpaperWindows
+    {
+        get { lock (_windowsLock) return _wallpaperWindows.ToArray(); }
+    }
 
     public event EventHandler? Attached;
     public event EventHandler? Detached;
@@ -34,13 +42,16 @@ public sealed class DesktopHost : IDisposable
 
     public bool Attach()
     {
-        if (_isAttached) return true;
+        lock (_windowsLock)
+        {
+            if (_disposed) return false;
+            if (_isAttached) return true;
 
-        // Attach() marks the host ready and starts the retry timer only. It must
-        // NOT create a wallpaper window: App startup (and playback) create windows
-        // per-monitor via CreateForMonitor(). Creating one here left an orphan
-        // window (no renderer, static background) embedded in the desktop WorkerW.
-        _isAttached = true;
+            // Attach() marks the host ready and starts the retry timer only. It
+            // must NOT create a wallpaper window: playback creates windows per
+            // monitor via CreateForMonitor().
+            _isAttached = true;
+        }
         _retryTimer.Start();
         _logger.Info("DesktopHost attached");
         Attached?.Invoke(this, EventArgs.Empty);
@@ -55,7 +66,15 @@ public sealed class DesktopHost : IDisposable
         if (window.Handle != IntPtr.Zero)
         {
             window.Resize(x, y, width, height);
-            _wallpaperWindows.Add(window);
+            lock (_windowsLock)
+            {
+                if (!_isAttached || _disposed)
+                {
+                    window.Dispose();
+                    return null;
+                }
+                _wallpaperWindows.Add(window);
+            }
             _logger.Info($"Created wallpaper window at ({x},{y}) {width}x{height}");
             return window;
         }
@@ -66,20 +85,26 @@ public sealed class DesktopHost : IDisposable
 
     public void ResizeMainWindow(int x, int y, int width, int height)
     {
-        foreach (var w in _wallpaperWindows)
+        WallpaperWindow[] windows;
+        lock (_windowsLock) windows = _wallpaperWindows.ToArray();
+        foreach (var w in windows)
             w.Resize(x, y, width, height);
     }
 
     public void Detach()
     {
-        if (!_isAttached) return;
+        WallpaperWindow[] windows;
+        lock (_windowsLock)
+        {
+            if (!_isAttached) return;
+            _isAttached = false;
+            windows = _wallpaperWindows.ToArray();
+            _wallpaperWindows.Clear();
+        }
         _retryTimer.Stop();
 
-        foreach (var w in _wallpaperWindows)
+        foreach (var w in windows)
             w.Dispose();
-        _wallpaperWindows.Clear();
-
-        _isAttached = false;
         _logger.Info("DesktopHost detached");
         Detached?.Invoke(this, EventArgs.Empty);
     }
