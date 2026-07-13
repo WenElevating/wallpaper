@@ -317,6 +317,36 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
                 : null;
     }
 
+    public async Task RecreateActiveSessionsAsync(CancellationToken ct = default)
+    {
+        (PlaybackSession session, SessionDescriptor descriptor)[] active;
+        lock (_lock)
+        {
+            active = _sessions
+                .Where(pair => _sessionDescriptors.ContainsKey(pair.Key))
+                .Select(pair => (pair.Value, _sessionDescriptors[pair.Key]))
+                .ToArray();
+        }
+
+        foreach (var (session, descriptor) in active)
+        {
+            var path = PlaybackPathResolver?.Invoke(descriptor.SourcePath, _performancePolicy.Profile)
+                ?? descriptor.SourcePath;
+            await SetWallpaperCoreAsync(
+                session.MonitorId,
+                session.WallpaperId,
+                path,
+                descriptor.X,
+                descriptor.Y,
+                descriptor.Width,
+                descriptor.Height,
+                ct,
+                descriptor.SourcePath,
+                session.Position,
+                session.ActivePauseReasons);
+        }
+    }
+
     public virtual async Task RemoveWallpaperAsync(Guid monitorId, CancellationToken ct = default)
     {
         await RemoveWallpaperInternalAsync(monitorId, ct);

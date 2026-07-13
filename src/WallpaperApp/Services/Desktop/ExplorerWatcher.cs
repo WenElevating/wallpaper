@@ -53,6 +53,7 @@ public sealed class ExplorerWatcher : IDisposable
                 try
                 {
                     await Task.Delay(1000);
+                    _desktopHost.Detach();
                     _desktopHost.Attach();
                     ExplorerRestarted?.Invoke(this, EventArgs.Empty);
                 }

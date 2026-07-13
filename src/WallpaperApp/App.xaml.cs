@@ -25,6 +25,7 @@ public partial class App : Application
     private PowerAwareController? _powerAware;
     private RemoteSessionDetector? _remoteSession;
     private PlaylistCoordinator? _playlists;
+    private ExplorerWatcher? _explorerWatcher;
 
     // Single-instance guard. Held for the whole process lifetime so a second
     // launch detects the first and exits instead of fighting over the same log
@@ -143,6 +144,21 @@ public partial class App : Application
             desktopHost.Attach();
             logger.Info($"DesktopHost attached: {desktopHost.IsAttached}");
 
+            var playback = _serviceProvider.GetRequiredService<PlaybackManager>();
+            _explorerWatcher = _serviceProvider.GetRequiredService<ExplorerWatcher>();
+            _explorerWatcher.ExplorerRestarted += (_, _) =>
+            {
+                _ = playback.RecreateActiveSessionsAsync()
+                    .ContinueWith(
+                        t =>
+                        {
+                            if (t.IsFaulted)
+                                logger.Error("Failed to recreate wallpaper sessions after Explorer restart", t.Exception);
+                        },
+                        TaskScheduler.Default);
+            };
+            _explorerWatcher.Start();
+
             // F1: build the playlist coordinator. Its switcher needs the live
             // MainViewModel (to resolve monitor + wallpaper by id), creating a
             // construction cycle, so it's built here and attached back to the VM.
@@ -157,7 +173,6 @@ public partial class App : Application
             // foreground, and the power controller to pause on battery. Both
             // read the CURRENT settings (the user can toggle them at runtime), so
             // they take a Func<AppSettings> accessor rather than a snapshot.
-            var playback = _serviceProvider.GetRequiredService<PlaybackManager>();
             var fullscreen = _serviceProvider.GetRequiredService<FullscreenDetector>();
             System.Func<AppSettings> currentSettings = () => viewModel.Settings;
             fullscreen.FullscreenStateChanged += (s, isFullscreen) =>
@@ -243,6 +258,7 @@ public partial class App : Application
         // PlaybackManager constructs D2dRenderer per-session using WallpaperWindow HWND
         services.AddSingleton<PlaybackManager>();
         services.AddSingleton<DesktopHost>();
+        services.AddSingleton<ExplorerWatcher>();
         services.AddSingleton<MonitorManager>();
         services.AddSingleton<FullscreenDetector>();
         services.AddSingleton<WallpaperVisibilityDetector>();
@@ -266,6 +282,7 @@ public partial class App : Application
             _powerAware?.Dispose();
             _remoteSession?.Dispose();
             _playlists?.StopAll();
+            _explorerWatcher?.Dispose();
 
             var fullscreen = _serviceProvider.GetService<FullscreenDetector>();
             fullscreen?.Dispose();
