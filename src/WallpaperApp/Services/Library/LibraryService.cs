@@ -256,7 +256,14 @@ public sealed class LibraryService
         // Track per-item new paths; we only commit DB changes for items that fully
         // copied (video, and poster if present). Defer the SaveChanges to the end
         // so a failure mid-loop doesn't leave a half-migrated DB.
-        var pendingUpdates = new List<(WallpaperItem item, string newVideo, string? newPoster)>();
+        var pendingUpdates = new List<(
+            WallpaperItem item,
+            string newVideo,
+            string? newPoster,
+            string oldVideo,
+            string oldPoster,
+            string oldVariantDir,
+            string newVariantDir)>();
 
         foreach (var item in items)
         {
@@ -284,11 +291,16 @@ public sealed class LibraryService
                         await CopyAsync(item.ThumbnailPath, newPosterPath, ct);
                 }
 
-                pendingUpdates.Add((item, newVideoPath, newPosterPath));
                 var oldVariantDir = VideoVariantService.ResolveVariantDirectory(_libraryDir, item.ManagedFilePath);
                 var newVariantDir = VideoVariantService.ResolveVariantDirectory(newLibDir, newVideoPath);
-                if (Directory.Exists(oldVariantDir) && !Directory.Exists(newVariantDir))
-                    Directory.Move(oldVariantDir, newVariantDir);
+                pendingUpdates.Add((
+                    item,
+                    newVideoPath,
+                    newPosterPath,
+                    item.ManagedFilePath,
+                    item.ThumbnailPath,
+                    oldVariantDir,
+                    newVariantDir));
                 success++;
             }
             catch (Exception ex)
@@ -298,14 +310,31 @@ public sealed class LibraryService
             }
         }
 
-        // Commit: update DB paths and delete originals, only for fully-copied items.
-        foreach (var (item, newVideo, newPoster) in pendingUpdates)
+        // Commit only the DB paths first. Old files remain available if the DB
+        // write fails, so a failed migration cannot leave rows pointing at
+        // deleted sources.
+        foreach (var (item, newVideo, newPoster, _, _, _, _) in pendingUpdates)
         {
-            var oldVideo = item.ManagedFilePath;
-            var oldPoster = item.ThumbnailPath;
-
             item.ManagedFilePath = newVideo;
             item.ThumbnailPath = newPoster ?? "";
+        }
+
+        await db.SaveChangesAsync(ct);
+
+        // Cleanup is deliberately post-commit. Failure here is safe: the DB
+        // already points at the complete new copy and the old file can be
+        // removed on a later maintenance pass.
+        foreach (var (_, _, _, oldVideo, oldPoster, oldVariantDir, newVariantDir) in pendingUpdates)
+        {
+            try
+            {
+                if (Directory.Exists(oldVariantDir) && !Directory.Exists(newVariantDir))
+                    Directory.Move(oldVariantDir, newVariantDir);
+            }
+            catch (Exception ex)
+            {
+                _logger.Warn($"Migration: failed to move playback proxies {oldVariantDir}: {ex.Message}");
+            }
 
             try { if (File.Exists(oldVideo)) File.Delete(oldVideo); }
             catch (Exception ex) { _logger.Warn($"Migration: failed to delete old video {oldVideo}: {ex.Message}"); }
@@ -316,7 +345,6 @@ public sealed class LibraryService
             }
         }
 
-        await db.SaveChangesAsync(ct);
         _logger.Info($"Migration to '{newRoot}': {success} succeeded, {failed} failed");
         return (success, failed);
     }
