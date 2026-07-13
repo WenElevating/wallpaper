@@ -287,6 +287,38 @@ public sealed class PlaybackSessionTests : IDisposable
         return (session, backend);
     }
 
+    [Fact]
+    public async Task StopAsync_DoesNotWaitForeverForUncooperativeDecoder()
+    {
+        var backend = new BlockingPlaybackBackend(CreateFrame());
+        var renderer = new FakeRenderer(true);
+        var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        var session = new PlaybackSession(
+            Guid.NewGuid(), Guid.NewGuid(), "fake.mp4", 0, 0, 1, 1,
+            (_, _, _, _) => surface,
+            (_, _, _, _) => renderer,
+            () => backend,
+            () => throw new NotImplementedException(),
+            _logger);
+
+        await session.StartAsync();
+        await backend.Blocked;
+
+        var stopTask = session.StopAsync();
+        try
+        {
+            var completed = await Task.WhenAny(stopTask, Task.Delay(TimeSpan.FromSeconds(3)));
+            Assert.Same(stopTask, completed);
+            await Assert.ThrowsAsync<TimeoutException>(() => stopTask);
+        }
+        finally
+        {
+            backend.Release();
+            await Task.WhenAny(stopTask, Task.Delay(TimeSpan.FromSeconds(3)));
+            session.Dispose();
+        }
+    }
+
     private static FrameData CreateFrame()
         => CreateFrame(0);
 
@@ -417,6 +449,51 @@ public sealed class PlaybackSessionTests : IDisposable
                 }
             }
         }
+    }
+
+    private sealed class BlockingPlaybackBackend : IPlaybackBackend
+    {
+        private readonly FrameData _firstFrame;
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _blocked = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _nextFrameCalls;
+        private bool _released;
+        public Task Blocked => _blocked.Task;
+
+        public BlockingPlaybackBackend(FrameData firstFrame) => _firstFrame = firstFrame;
+
+        public bool IsPlaying { get; private set; }
+        public bool IsPaused => false;
+        public bool IsHardwareDecoding => false;
+        public int VideoWidth => 1;
+        public int VideoHeight => 1;
+        public TimeSpan Duration => TimeSpan.Zero;
+        public TimeSpan Position => TimeSpan.Zero;
+        public event EventHandler? EndOfStream { add { } remove { } }
+        public void UpdatePerformancePolicy(PlaybackPerformancePolicy policy) { }
+        public Task<bool> OpenAsync(string filePath, CancellationToken ct = default) => Task.FromResult(true);
+        public Task PlayAsync(CancellationToken ct = default) { if (!_released) IsPlaying = true; return Task.CompletedTask; }
+        public Task PauseAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task ResumeAsync(CancellationToken ct = default) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken ct = default) { IsPlaying = false; return Task.CompletedTask; }
+        public Task SeekAsync(TimeSpan position, CancellationToken ct = default) => Task.CompletedTask;
+
+        public async Task<FrameData?> NextFrameAsync(CancellationToken ct = default)
+        {
+            if (Interlocked.Increment(ref _nextFrameCalls) == 1)
+                return _firstFrame;
+            _blocked.TrySetResult();
+            await _release.Task;
+            return null;
+        }
+
+        public void Release()
+        {
+            _released = true;
+            IsPlaying = false;
+            _release.TrySetResult();
+        }
+        public void Dispose() { }
     }
 
     private sealed class FakeRenderer : IFrameRenderer
