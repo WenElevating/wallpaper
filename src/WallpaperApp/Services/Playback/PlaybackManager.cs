@@ -14,7 +14,7 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
     private readonly Func<int, int, int, int, IWallpaperSurface?> _createSurface;
     private readonly Func<IntPtr, int, int, FileLogger, IFrameRenderer> _createRenderer;
     private readonly Func<IPlaybackBackend> _createBackend;
-    private readonly Func<IPlaybackBackend> _createFallbackBackend;
+    private readonly Func<IPlaybackBackend>? _createFallbackBackend;
     private readonly object _lock = new();
     private readonly object _policyTasksLock = new();
     private readonly List<Task> _policyTasks = new();
@@ -47,7 +47,7 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         _createSurface = createSurface ?? ((x, y, width, height) => _desktopHost.CreateForMonitor(x, y, width, height));
         _createRenderer = createRenderer ?? ((hwnd, width, height, fileLogger) => new DxgiRenderer(hwnd, width, height, fileLogger, Gpu));
         _createBackend = createBackend ?? CreateBackend;
-        _createFallbackBackend = createFallbackBackend ?? CreateFallbackBackend;
+        _createFallbackBackend = createFallbackBackend;
     }
 
     public bool IsPlaying(Guid monitorId)
@@ -430,12 +430,6 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
     // available (enables zero-copy), else a fresh per-session device.
     private IntPtr AcquireHwDevice()
         => Gpu is { IsAvailable: true } ? HwDecodeDevice.CreateForDevice(Gpu.DevicePointer) : HwDecodeDevice.CreateNew();
-    private IPlaybackBackend CreateFallbackBackend()
-    {
-        _logger.Warn("FfmpegBackend failed, falling back to MfBackend");
-        return new MfBackend(_logger);
-    }
-
     public void Dispose()
     {
         Task[] policyTasks;

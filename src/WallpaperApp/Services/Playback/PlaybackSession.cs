@@ -42,7 +42,7 @@ public sealed class PlaybackSession : IDisposable
     private readonly Func<int, int, int, int, IWallpaperSurface?> _createSurface;
     private readonly Func<IntPtr, int, int, FileLogger, IFrameRenderer> _createRenderer;
     private readonly Func<IPlaybackBackend> _createBackend;
-    private readonly Func<IPlaybackBackend> _createFallbackBackend;
+    private readonly Func<IPlaybackBackend>? _createFallbackBackend;
     private readonly object _performancePolicyLock = new();
     private readonly IClock _clock;
     private readonly TimeSpan _initialPosition;
@@ -94,7 +94,7 @@ public sealed class PlaybackSession : IDisposable
         Func<int, int, int, int, IWallpaperSurface?> createSurface,
         Func<IntPtr, int, int, FileLogger, IFrameRenderer> createRenderer,
         Func<IPlaybackBackend> createBackend,
-        Func<IPlaybackBackend> createFallbackBackend,
+         Func<IPlaybackBackend>? createFallbackBackend,
         FileLogger logger,
         PlaybackPerformancePolicy performancePolicy = default,
         TimeSpan initialPosition = default)
@@ -125,7 +125,7 @@ public sealed class PlaybackSession : IDisposable
         Func<int, int, int, int, IWallpaperSurface?> createSurface,
         Func<IntPtr, int, int, FileLogger, IFrameRenderer> createRenderer,
         Func<IPlaybackBackend> createBackend,
-        Func<IPlaybackBackend> createFallbackBackend,
+         Func<IPlaybackBackend>? createFallbackBackend,
         FileLogger logger,
         PlaybackPerformancePolicy performancePolicy,
         TimeSpan initialPosition,
@@ -292,7 +292,14 @@ public sealed class PlaybackSession : IDisposable
             _backend = _createBackend();
             if (!_backend.OpenAsync(_filePath, ct).GetAwaiter().GetResult())
             {
-                _logger.Warn("Primary backend failed to open file, trying fallback");
+                if (_createFallbackBackend == null)
+                {
+                    _logger.Error($"No fallback playback backend is configured for {_filePath}");
+                    _readyTcs?.TrySetResult(false);
+                    return;
+                }
+
+                _logger.Warn("Primary backend failed to open file, trying configured fallback");
                 _backend.Dispose();
                 _backend = _createFallbackBackend();
                 if (!_backend.OpenAsync(_filePath, ct).GetAwaiter().GetResult())
