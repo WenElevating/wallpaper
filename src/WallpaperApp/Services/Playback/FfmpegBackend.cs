@@ -126,8 +126,14 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
                 // Read AVFormatContext->streams[_videoStreamIndex]->codecpar via offsets
                 var streamsPtr = Marshal.ReadIntPtr(_fmtCtx, FfmpegOffsets.StreamsOffset);
+                if (streamsPtr == IntPtr.Zero)
+                    return Fail("FFmpeg returned a null stream table");
                 var streamPtr = Marshal.ReadIntPtr(streamsPtr + _videoStreamIndex * IntPtr.Size);
+                if (streamPtr == IntPtr.Zero)
+                    return Fail($"FFmpeg returned a null video stream: {_videoStreamIndex}");
                 var codecPar = Marshal.ReadIntPtr(streamPtr, FfmpegOffsets.CodecparOffset);
+                if (codecPar == IntPtr.Zero)
+                    return Fail("FFmpeg returned null codec parameters");
 
                 _width = Marshal.ReadInt32(codecPar, FfmpegOffsets.WidthOffset);
                 _height = Marshal.ReadInt32(codecPar, FfmpegOffsets.HeightOffset);
@@ -167,6 +173,8 @@ public sealed class FfmpegBackend : IPlaybackBackend
                 // would waste ~16MB at 1080p / ~66MB at 4K for nothing.
 
                 _timeBase = ReadTimeBase(streamPtr);
+                if (_timeBase.Num <= 0 || _timeBase.Den <= 0)
+                    return Fail($"Invalid video stream time base: {_timeBase.Num}/{_timeBase.Den}");
                 var streamDuration = Marshal.ReadInt64(streamPtr, FfmpegOffsets.StreamDurationOffset);
                 _durationUs = streamDuration * _timeBase.Num * 1_000_000 / _timeBase.Den;
 
@@ -177,10 +185,11 @@ public sealed class FfmpegBackend : IPlaybackBackend
                 catch (Exception ex)
                 {
                     _logger.Error($"Open failed: {filePath}", ex);
+                    Close();
                     return false;
                 }
 
-                bool Fail(string msg) { _logger.Error(msg); return false; }
+                bool Fail(string msg) { _logger.Error(msg); Close(); return false; }
             }
         }, ct);
     }
@@ -330,6 +339,12 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
                         if (_swFrame == IntPtr.Zero)
                             _swFrame = FfmpegNative.av_frame_alloc();
+                        if (_swFrame == IntPtr.Zero)
+                        {
+                            _logger.Warn("FFmpeg software transfer frame allocation failed");
+                            FfmpegNative.av_frame_unref(_avFrame);
+                            return null;
+                        }
                         FfmpegNative.av_frame_unref(_swFrame);
                         var tret = FfmpegNative.av_hwframe_transfer_data(_swFrame, _avFrame, 0);
                         if (tret < 0)
