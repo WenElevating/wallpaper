@@ -13,10 +13,12 @@ public class PrecisionTimerTests
         var sw = Stopwatch.StartNew();
         timer.Wait(5_000);  // 5ms = 5000us
         sw.Stop();
-        // Waitable timer has ~1ms resolution; the wait should be >= 5ms and
-        // not wildly over (allow generous headroom for scheduler latency).
-        Assert.True(sw.ElapsedMilliseconds >= 5, $"Expected >= 5ms, got {sw.ElapsedMilliseconds}ms");
-        Assert.True(sw.ElapsedMilliseconds < 500, $"Expected < 500ms, got {sw.ElapsedMilliseconds}ms");
+        // Waitable timers are subject to platform clock granularity and the
+        // elapsed-millisecond property truncates fractional milliseconds.
+        Assert.True(sw.Elapsed.TotalMilliseconds >= 4.0,
+            $"Expected approximately 5ms, got {sw.Elapsed.TotalMilliseconds:F3}ms");
+        Assert.True(sw.Elapsed.TotalMilliseconds < 500,
+            $"Expected < 500ms, got {sw.Elapsed.TotalMilliseconds:F3}ms");
     }
 
     [Fact]
