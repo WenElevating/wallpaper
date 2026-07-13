@@ -105,6 +105,8 @@ public sealed class FfmpegBackend : IPlaybackBackend
 
                     if (!FfmpegNative.HasExpectedMajorVersions(out var abiReason))
                         return Fail(abiReason);
+                    if (!FfmpegNative.HasExpectedStructLayouts(out abiReason))
+                        return Fail(abiReason);
 
                     _fmtCtx = IntPtr.Zero;
                 var ret = FfmpegNative.avformat_open_input(ref _fmtCtx, filePath, IntPtr.Zero, IntPtr.Zero);
@@ -125,6 +127,9 @@ public sealed class FfmpegBackend : IPlaybackBackend
                 _videoStreamIndex = streamIdx;
 
                 // Read AVFormatContext->streams[_videoStreamIndex]->codecpar via offsets
+                var streamCount = Marshal.ReadInt32(_fmtCtx, FfmpegOffsets.NbStreamsOffset);
+                if (streamCount <= 0 || _videoStreamIndex >= streamCount)
+                    return Fail($"Invalid FFmpeg stream table: count={streamCount}, video={_videoStreamIndex}");
                 var streamsPtr = Marshal.ReadIntPtr(_fmtCtx, FfmpegOffsets.StreamsOffset);
                 if (streamsPtr == IntPtr.Zero)
                     return Fail("FFmpeg returned a null stream table");

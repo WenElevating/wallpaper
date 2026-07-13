@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using WallpaperApp.Interop;
 
 namespace WallpaperApp.Services.Playback;
 
@@ -52,6 +53,52 @@ internal static partial class FfmpegNative
 
         reason = $"FFmpeg ABI mismatch: avformat={formatMajor}, avcodec={codecMajor}, avutil={utilMajor}; expected 61/61/59";
         return false;
+    }
+
+    // The managed backend reads a small set of public FFmpeg structs through
+    // offsets because the bundled DLLs do not expose generated field accessors.
+    // Major-version checks alone do not protect against a vendor rebuild with a
+    // different ABI layout, so validate the offsets against freshly allocated
+    // AVFrame/AVPacket instances before opening user media.
+    internal static bool HasExpectedStructLayouts(out string reason)
+    {
+        IntPtr frame = IntPtr.Zero;
+        IntPtr packet = IntPtr.Zero;
+        try
+        {
+            frame = av_frame_alloc();
+            packet = av_packet_alloc();
+            if (frame == IntPtr.Zero || packet == IntPtr.Zero)
+            {
+                reason = "FFmpeg ABI probe allocation failed";
+                return false;
+            }
+
+            var format = Marshal.ReadInt32(frame, FfmpegOffsets.FrameFormat);
+            var width = Marshal.ReadInt32(frame, FfmpegOffsets.FrameWidth);
+            var height = Marshal.ReadInt32(frame, FfmpegOffsets.FrameHeight);
+            var data0 = Marshal.ReadIntPtr(frame, FfmpegOffsets.FrameData0);
+            var linesize0 = Marshal.ReadInt32(frame, FfmpegOffsets.FrameLinesize0);
+            if (format != -1 || width != 0 || height != 0 ||
+                data0 != IntPtr.Zero || linesize0 != 0)
+            {
+                reason = $"FFmpeg ABI struct layout mismatch: frame(format={format}, size={width}x{height}, data0={data0}, linesize0={linesize0})";
+                return false;
+            }
+
+            reason = string.Empty;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            reason = $"FFmpeg ABI struct layout probe failed: {ex.Message}";
+            return false;
+        }
+        finally
+        {
+            if (frame != IntPtr.Zero) av_frame_free(ref frame);
+            if (packet != IntPtr.Zero) av_packet_free(ref packet);
+        }
     }
 
     [LibraryImport(AvFormat)]
