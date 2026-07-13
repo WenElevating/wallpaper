@@ -231,23 +231,26 @@ public sealed class FfmpegBackend : IPlaybackBackend
     }
 
     public Task<FrameData?> NextFrameAsync(CancellationToken ct = default)
+        => Task.FromResult(DecodeNextFrame(ct));
+
+    private FrameData? DecodeNextFrame(CancellationToken ct)
     {
-        return Task.Run(() =>
+        lock (_nativeLock)
         {
-            lock (_nativeLock)
+            if (!_isOpen || !IsPlaying) return null;
+
+            // Release a previously-held GPU frame. Zero-copy keeps _avFrame alive
+            // across the renderer's synchronous Present(); by the time the next
+            // frame is requested, the texture has been copied and can be recycled.
+            if (_heldHwFrame)
             {
-                if (!_isOpen || !IsPlaying) return null;
+                FfmpegNative.av_frame_unref(_avFrame);
+                _heldHwFrame = false;
+            }
 
-                // Release a previously-held GPU frame. Zero-copy keeps _avFrame alive
-                // across the renderer's synchronous Present(); by the time the next
-                // frame is requested, the texture has been copied and can be recycled.
-                if (_heldHwFrame)
-                {
-                    FfmpegNative.av_frame_unref(_avFrame);
-                    _heldHwFrame = false;
-                }
-
-                try
+            try
+            {
+                while (true)
                 {
                     while (true)
                     {
@@ -424,18 +427,18 @@ public sealed class FfmpegBackend : IPlaybackBackend
                     var ptsUs = pts * _timeBase.Num * 1_000_000 / _timeBase.Den;
                     Position = TimeSpan.FromMicroseconds(ptsUs);
 
-                        return new FrameData(activeBuffer, _width, _height, _stride, ptsUs);
+                    return new FrameData(activeBuffer, _width, _height, _stride, ptsUs);
                     }
                 }
-                catch (OperationCanceledException) { return null; }
+            }
+            catch (OperationCanceledException) { return null; }
                 catch (Exception ex)
                 {
                     _logger.Warn($"Frame decode error: {ex.Message}");
                     return null;
                 }
             }
-        }, ct);
-    }
+        }
 
     // Opens the codec, preferring D3D11VA hardware decode and transparently
     // retrying software if the hardware open fails. Sets _useHardware to reflect
