@@ -160,61 +160,6 @@ public sealed class WallpaperWindow : IWallpaperSurface
         return found;
     }
 
-    private bool InsertAboveDesktopBackground()
-    {
-        var sw = NativeMethods.GetSystemMetrics(NativeMethods.SM_CXSCREEN);
-        var sh = NativeMethods.GetSystemMetrics(NativeMethods.SM_CYSCREEN);
-
-        // Standard wallpaper Z-order technique for a TOP-LEVEL window:
-        //  1. Find Progman (the desktop window that hosts the icon ListView).
-        //  2. Send WM_SPAWN_WORKERW (0x052C) so the shell moves the static
-        //     wallpaper image onto a separate WorkerW. This makes the icon host
-        //     (SHELLDLL_DefView) draw transparent, so a window behind it shows
-        //     through between the icons and the system wallpaper.
-        //  3. SetWindowPos(hwnd, progman) places our window immediately BEHIND
-        //     Progman in the Z order (MSDN: the positioned window goes behind
-        //     hWndInsertAfter). That puts it below the icon host AND the
-        //     taskbar, and above the system wallpaper layer — i.e. a wallpaper.
-        IntPtr progman = IntPtr.Zero;
-        NativeMethods.EnumWindows((hwnd, _) =>
-        {
-            if (GetClassName(hwnd) == "Progman")
-            {
-                progman = hwnd;
-                return false;
-            }
-            return true;
-        }, IntPtr.Zero);
-
-        if (progman == IntPtr.Zero)
-        {
-            _logger.Warn("Progman not found; placing wallpaper at HWND_BOTTOM");
-            NativeMethods.SetWindowPos(
-                _hwnd, NativeMethods.HWND_BOTTOM,
-                0, 0, sw, sh,
-                NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOMOVE | NativeMethods.SWP_SHOWWINDOW);
-            return false;
-        }
-
-        NativeMethods.SendMessageW(progman, NativeMethods.WM_SPAWN_WORKERW, IntPtr.Zero, IntPtr.Zero);
-
-        // SetWindowPos(hwnd, X) places hwnd immediately in FRONT of (above) X
-        // in the Z order. To land our window BEHIND Progman — below the desktop
-        // icons and the taskbar, above the system wallpaper — anchor on the
-        // top-level window immediately beneath Progman (GW_HWNDNEXT).
-        var below = NativeMethods.GetWindow(progman, NativeMethods.GW_HWNDNEXT);
-        var insertAfter = below != IntPtr.Zero ? below : NativeMethods.HWND_BOTTOM;
-        NativeMethods.SetWindowPos(
-            _hwnd, insertAfter,
-            0, 0, sw, sh,
-            NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_NOSIZE | NativeMethods.SWP_NOMOVE | NativeMethods.SWP_SHOWWINDOW);
-
-        var above = NativeMethods.GetWindow(_hwnd, NativeMethods.GW_HWNDPREV);
-        var belowSelf = NativeMethods.GetWindow(_hwnd, NativeMethods.GW_HWNDNEXT);
-        _logger.Info($"Wallpaper placed (insert after {insertAfter}); Z above={above}({GetClassName(above)}) below={belowSelf}({GetClassName(belowSelf)}): {_hwnd}");
-        return true;
-    }
-
     private static string GetClassName(IntPtr hwnd)
     {
         var buf = new char[256];
