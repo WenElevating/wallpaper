@@ -18,6 +18,7 @@ public enum PauseReason
     Power,
     Occluded, // wallpaper fully covered by other windows (not visible)
     RemoteDesktop, // RDP or Miracast session active (bandwidth saver)
+    LibraryMigration, // storage root migration is copying files
 }
 
 // Owns the entire per-monitor render pipeline on a SINGLE dedicated thread:

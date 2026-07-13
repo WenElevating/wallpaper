@@ -926,7 +926,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         // Pause playback so the decoder releases the source files (otherwise copy
         // fails on Windows with a sharing violation). Resume after, regardless.
-        await PauseAllAsync();
+        await _playback.PauseAllAsync(PauseReason.LibraryMigration);
         try
         {
             var (success, failed) = await _library.MigrateToAsync(newRoot);
@@ -959,7 +959,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         finally
         {
-            await ResumeAllAsync();
+            await _playback.ResumeAllAsync(PauseReason.LibraryMigration);
         }
     }
 
