@@ -95,11 +95,6 @@ public partial class App : Application
             HwDecodeDevice.Logger = logger;
             VideoFrameView.Logger = logger;
 
-            // Create the shared GPU device and hand it to the playback manager so
-            // decode + render share one D3D11 device (enables zero-copy GPU render).
-            var gpu = _serviceProvider.GetRequiredService<GpuDevice>();
-            _serviceProvider.GetRequiredService<PlaybackManager>().Gpu = gpu;
-
             logger.Info("WallpaperApp starting...");
 
             // Run migration with a standalone context to avoid threading issues
@@ -111,6 +106,14 @@ public partial class App : Application
 
             var settings = _serviceProvider.GetRequiredService<SettingsService>();
             var appSettings = await settings.LoadAsync();
+
+            // Create the shared GPU device and hand it to the playback manager so
+            // decode + render share one D3D11 device (enables zero-copy GPU render).
+            // Device creation is lazy, so the adapter preference below applies
+            // before the first wallpaper session starts.
+            var gpu = _serviceProvider.GetRequiredService<GpuDevice>();
+            gpu.PreferDiscreteGpu = appSettings.PreferDiscreteGpu;
+            _serviceProvider.GetRequiredService<PlaybackManager>().Gpu = gpu;
 
             // Apply the configured library storage root before anything resolves
             // the LibraryService or generates posters. Empty LibraryRoot = default

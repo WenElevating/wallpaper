@@ -49,6 +49,12 @@ public sealed partial class MainViewModel
         set => UpdatePerfSetting(s => s with { PauseOnRemoteSession = value });
     }
 
+    public bool IsPreferDiscreteGpu
+    {
+        get => Settings.PreferDiscreteGpu;
+        set => UpdatePerfSetting(s => s with { PreferDiscreteGpu = value });
+    }
+
     public IReadOnlyList<WallpaperPerformanceProfile> PerformanceProfiles { get; } =
         Enum.GetValues<WallpaperPerformanceProfile>();
 
@@ -65,6 +71,7 @@ public sealed partial class MainViewModel
         OnPropertyChanged(nameof(IsPauseOnBattery));
         OnPropertyChanged(nameof(IsPauseOnRemoteSession));
         OnPropertyChanged(nameof(SelectedPerformanceProfile));
+        OnPropertyChanged(nameof(IsPreferDiscreteGpu));
         _playback.UpdatePerformancePolicy(PlaybackPerformancePolicy.FromProfile(Settings.PerformanceProfile));
         _lastSettingsSave = SaveSettingsAsync(Settings);
     }

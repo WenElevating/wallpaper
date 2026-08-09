@@ -184,6 +184,9 @@
   <data name="PerformanceProfileSaver" xml:space="preserve">
     <value>省电</value>
   </data>
+  <data name="PreferDiscreteGpuLabel" xml:space="preserve">
+    <value>优先使用独立显卡(重启后生效)</value>
+  </data>
   <data name="HotkeyTogglePauseLabel" xml:space="preserve">
     <value>暂停 / 恢复 热键</value>
   </data>

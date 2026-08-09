@@ -184,6 +184,9 @@
   <data name="PerformanceProfileSaver" xml:space="preserve">
     <value>Saver</value>
   </data>
+  <data name="PreferDiscreteGpuLabel" xml:space="preserve">
+    <value>Prefer discrete GPU (restart to apply)</value>
+  </data>
   <data name="HotkeyTogglePauseLabel" xml:space="preserve">
     <value>Pause / Resume hotkey</value>
   </data>

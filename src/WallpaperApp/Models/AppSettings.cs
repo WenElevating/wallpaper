@@ -21,6 +21,10 @@ public record AppSettings
     public FitMode DefaultFitMode { get; init; } = FitMode.Fill;
     public bool HardwareAccelerationEnabled { get; init; } = true;
     public WallpaperPerformanceProfile PerformanceProfile { get; init; } = WallpaperPerformanceProfile.Balanced;
+    /// <summary>Create the D3D11 device on a discrete NVIDIA/AMD GPU when one
+    /// exists (decode + render offload from the iGPU). Takes effect on the next
+    /// launch; the device is created once per process.</summary>
+    public bool PreferDiscreteGpu { get; init; } = true;
     public string LogVerbosity { get; init; } = "Info";
     public string Theme { get; init; } = "Dark";
     /// <summary>Global hotkey bindings. Empty slots are unbound.</summary>

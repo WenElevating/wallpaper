@@ -164,6 +164,24 @@ public sealed class MainViewModelWallpaperCommandsTests : IDisposable
         Assert.Equal(DecoderFrameDiscard.Default, CurrentPolicy(vm).DecoderDiscard);
     }
 
+    [Fact]
+    public async Task PreferDiscreteGpuSetting_LoadsAndPersists()
+    {
+        var settingsPath = Path.Combine(_tempDir, "settings.json");
+        var settings = new SettingsService(settingsPath);
+        await settings.SaveAsync(new AppSettings());
+
+        var vm = CreateViewModel(settings: settings);
+        await vm.LoadAsync();
+
+        Assert.True(vm.IsPreferDiscreteGpu); // default
+
+        vm.IsPreferDiscreteGpu = false;
+        await vm.LastSettingsSave;
+
+        Assert.False((await settings.LoadAsync()).PreferDiscreteGpu);
+    }
+
     private static PlaybackPerformancePolicy CurrentPolicy(MainViewModel vm)
     {
         var field = typeof(PlaybackManager).GetField("_performancePolicy",

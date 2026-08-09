@@ -17,13 +17,15 @@ public class SettingsServiceTests
             {
                 LaunchAtStartup = true,
                 Theme = "Light",
-                DefaultFitMode = FitMode.Stretch
+                DefaultFitMode = FitMode.Stretch,
+                PreferDiscreteGpu = false
             };
             await service.SaveAsync(settings);
             var loaded = await service.LoadAsync();
             Assert.True(loaded.LaunchAtStartup);
             Assert.Equal("Light", loaded.Theme);
             Assert.Equal(FitMode.Stretch, loaded.DefaultFitMode);
+            Assert.False(loaded.PreferDiscreteGpu);
         }
         finally
         {
