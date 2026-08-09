@@ -237,6 +237,14 @@ public sealed class FfmpegBackend : IPlaybackBackend
             if (_isOpen)
             {
                 var targetPts = (long)(position.TotalSeconds * _timeBase.Den / _timeBase.Num);
+                // A seek flushes the codec back to packet-fed mode: clear the
+                // end-of-stream drain state, or the next DecodeNextFrame goes
+                // straight into drain mode and avcodec_receive_frame returns
+                // EAGAIN forever (no packets are ever sent again) — the render
+                // loop's EOS restart (SeekAsync(0) + PlayAsync) then returns
+                // null for every frame and the wallpaper freezes on its last
+                // frame silently and permanently.
+                _decoderDraining = false;
                 FfmpegNative.avcodec_flush_buffers(_codecCtx);
                 FfmpegNative.av_seek_frame(_fmtCtx, _videoStreamIndex, targetPts, FfmpegNative.AVSEEK_FLAG_BACKWARD);
             }

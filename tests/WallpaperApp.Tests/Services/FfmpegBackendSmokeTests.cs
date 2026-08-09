@@ -64,6 +64,45 @@ public sealed class FfmpegBackendSmokeTests : IDisposable
         AssertPixelClose(expected, actual, tolerance: 2);
     }
 
+    // Regression: the decoder's drain state (introduced to flush delayed
+    // B-frames at end of stream) was never reset when the render loop restarts
+    // playback via SeekAsync(0) + PlayAsync. After the first EOS the decoder
+    // stayed in drain mode and returned null forever — the wallpaper froze on
+    // its last frame with no errors and never recovered.
+    [Fact]
+    public async Task VideoEndOfStream_LoopRestart_DecodesFramesAgain()
+    {
+        var samplePath = Path.Combine(_tempDir, "short.mp4");
+        await CreateSampleVideoAsync(samplePath);
+
+        var probePath = ResolveProbePath();
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"\"{probePath}\" --loop-check \"{samplePath}\"",
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+
+        using var process = Process.Start(psi);
+        Assert.NotNull(process);
+
+        var stdoutTask = process!.StandardOutput.ReadToEndAsync();
+        var stderrTask = process.StandardError.ReadToEndAsync();
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+        await process.WaitForExitAsync(cts.Token);
+
+        var stdout = await stdoutTask;
+        var stderr = await stderrTask;
+
+        Assert.True(
+            process.ExitCode == 0,
+            $"Loop-restart probe exited with code {process.ExitCode}.{Environment.NewLine}stdout:{Environment.NewLine}{stdout}{Environment.NewLine}stderr:{Environment.NewLine}{stderr}");
+    }
+
     private async Task CreateSampleVideoAsync(string outputPath)
     {
         var psi = new ProcessStartInfo
