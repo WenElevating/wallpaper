@@ -162,7 +162,8 @@ public sealed class PlaybackSessionTests : IDisposable
     // the end-to-end path; these pin down the exact interval-boundary behavior
     // that the precision pacing makes effective (skip under interval, present at
     // interval). Balanced => MaxPresentFps=30 => MinFrameIntervalUs ≈ 33_333us;
-    // Quality => MaxPresentFps=null => MinFrameIntervalUs=0 => present everything.
+    // Quality => MaxPresentFps=30 => MinFrameIntervalUs ≈ 33_333us (GPU opt:
+    // a 60 FPS source is copied+drawn at most 30 times per second).
     [Fact]
     public void ShouldPresentFrame_Balanced_SkipsUnderInterval()
     {
@@ -183,17 +184,16 @@ public sealed class PlaybackSessionTests : IDisposable
     }
 
     [Fact]
-    public void ShouldPresentFrame_Quality_PresentsEverything()
+    public void ShouldPresentFrame_Quality_CapsAtThirtyFps()
     {
         var policy = PlaybackPerformancePolicy.FromProfile(
             WallpaperApp.Models.WallpaperPerformanceProfile.Quality);
 
-        // Quality has MaxPresentFps=null => MinFrameIntervalUs=0 => no cap.
-        Assert.Equal(0, policy.MinFrameIntervalUs);
-        // Even frames within a microsecond of each other must present.
+        // Quality now caps presents at 30 FPS like the other profiles.
+        Assert.Equal(33_333, policy.MinFrameIntervalUs);
         Assert.True(PlaybackSession.ShouldPresentFrame(0, -1, policy));
-        Assert.True(PlaybackSession.ShouldPresentFrame(1, 0, policy));
-        Assert.True(PlaybackSession.ShouldPresentFrame(2, 1, policy));
+        Assert.False(PlaybackSession.ShouldPresentFrame(20_000, 0, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(40_000, 0, policy));
     }
 
     [Fact]

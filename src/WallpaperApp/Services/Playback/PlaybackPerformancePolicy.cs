@@ -38,6 +38,11 @@ public readonly record struct PlaybackPerformancePolicy(
         {
             WallpaperPerformanceProfile.Saver => new PlaybackPerformancePolicy(profile, 30, DecoderFrameDiscard.NonReference, true),
             WallpaperPerformanceProfile.Balanced => new PlaybackPerformancePolicy(profile, 30, DecoderFrameDiscard.Default, true),
-            _ => new PlaybackPerformancePolicy(profile, null, DecoderFrameDiscard.Default, false),
+            // Quality keeps the ORIGINAL file and full decode (no proxy, no
+            // discard), but its present rate is capped at 30 FPS like the other
+            // profiles: for a 60 FPS 4K source the ShouldPresentFrame gate drops
+            // every other frame before the renderer, halving the per-second GPU
+            // copy + draw work with no perceptible change for wallpaper content.
+            _ => new PlaybackPerformancePolicy(profile, 30, DecoderFrameDiscard.Default, false),
         };
 }

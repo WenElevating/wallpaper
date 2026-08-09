@@ -6,7 +6,7 @@ namespace WallpaperApp.Tests.Services;
 public sealed class PlaybackPerformancePolicyTests
 {
     [Theory]
-    [InlineData(WallpaperPerformanceProfile.Quality, null)]
+    [InlineData(WallpaperPerformanceProfile.Quality, 30)]
     [InlineData(WallpaperPerformanceProfile.Balanced, 30)]
     [InlineData(WallpaperPerformanceProfile.Saver, 30)]
     public void FromProfile_MapsProfileToFrameRateCap(WallpaperPerformanceProfile profile, int? expected)
