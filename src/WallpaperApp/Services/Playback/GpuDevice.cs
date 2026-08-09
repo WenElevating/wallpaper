@@ -1,6 +1,7 @@
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
 using Vortice.DXGI;
+using SharpGen.Runtime;
 using static Vortice.Direct3D11.D3D11;
 using FeatureLevel = Vortice.Direct3D.FeatureLevel;
 using WallpaperApp.Services.Logging;
@@ -103,18 +104,18 @@ public sealed class GpuDevice : IDisposable
             _logger.Info($"Preferring discrete GPU: {description}");
 
         var flags = DeviceCreationFlags.BgraSupport | DeviceCreationFlags.VideoSupport;
-        if (!TryCreateHardware(flags, out var dev, out var ctx, out var videoOk, preferred))
+        if (!TryCreateHardware(flags, out var dev, out var ctx, out var videoOk, preferred, out var hr))
         {
             // The preferred discrete GPU failed to open (e.g. driver state):
             // fall back to the OS default adapter.
             if (preferred is not null)
-                _logger.Warn("Discrete GPU device creation failed; falling back to the default adapter");
-            if (!TryCreateHardware(flags, out dev, out ctx, out videoOk))
+                _logger.Warn($"Discrete GPU device creation failed (hr=0x{hr.Code:X8}); falling back to the default adapter");
+            if (!TryCreateHardware(flags, out dev, out ctx, out videoOk, null, out hr))
             {
                 // VideoSupport is rare to fail, but if it does, fall back to a
                 // plain device so the renderer's CPU-upload path still works
                 // (decode goes sw).
-                if (!TryCreateHardware(DeviceCreationFlags.BgraSupport, out dev, out ctx, out videoOk))
+                if (!TryCreateHardware(DeviceCreationFlags.BgraSupport, out dev, out ctx, out videoOk, null, out hr))
                 {
                     // Last-resort WARP (software rasterizer) — never has
                     // VideoSupport, but keeps something on screen if the
@@ -157,10 +158,18 @@ public sealed class GpuDevice : IDisposable
         out ID3D11Device dev,
         out ID3D11DeviceContext ctx,
         out bool videoOk,
-        IDXGIAdapter? preferred = null)
+        IDXGIAdapter? preferred,
+        out Result hr)
     {
         videoOk = (flags & DeviceCreationFlags.VideoSupport) != 0;
-        return D3D11CreateDevice(preferred, DriverType.Hardware, flags, FeatureLevels, out dev, out _, out ctx).Success;
+        // D3D11CreateDevice requires DriverType.Unknown when an explicit
+        // adapter is passed: Hardware + adapter returns E_INVALIDARG on every
+        // adapter, which silently defeats the discrete-GPU preference and falls
+        // back to the iGPU. Unknown + null falls back to the default adapter
+        // (same as Hardware), so keep Hardware for the no-adapter path.
+        var driverType = preferred is not null ? DriverType.Unknown : DriverType.Hardware;
+        hr = D3D11CreateDevice(preferred, driverType, flags, FeatureLevels, out dev, out _, out ctx);
+        return hr.Success;
     }
 
     private static string? ReadAdapterDescription(ID3D11Device dev)
