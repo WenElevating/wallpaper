@@ -103,21 +103,29 @@ public sealed class GpuDevice : IDisposable
             _logger.Info($"Preferring discrete GPU: {description}");
 
         var flags = DeviceCreationFlags.BgraSupport | DeviceCreationFlags.VideoSupport;
-        if (!TryCreate(flags, out var dev, out var ctx, out var videoOk, preferred))
+        if (!TryCreateHardware(flags, out var dev, out var ctx, out var videoOk, preferred))
         {
             // The preferred discrete GPU failed to open (e.g. driver state):
             // fall back to the OS default adapter.
             if (preferred is not null)
                 _logger.Warn("Discrete GPU device creation failed; falling back to the default adapter");
-            if (!TryCreate(flags, out dev, out ctx, out videoOk))
+            if (!TryCreateHardware(flags, out dev, out ctx, out videoOk))
             {
                 // VideoSupport is rare to fail, but if it does, fall back to a
                 // plain device so the renderer's CPU-upload path still works
                 // (decode goes sw).
-                if (!TryCreate(DeviceCreationFlags.BgraSupport, out dev, out ctx, out videoOk))
+                if (!TryCreateHardware(DeviceCreationFlags.BgraSupport, out dev, out ctx, out videoOk))
                 {
-                    _logger.Error("GpuDevice: D3D11 device creation failed entirely");
-                    return;
+                    // Last-resort WARP (software rasterizer) — never has
+                    // VideoSupport, but keeps something on screen if the
+                    // hardware driver is unavailable.
+                    videoOk = false;
+                    if (!D3D11CreateDevice(null, DriverType.Warp, DeviceCreationFlags.BgraSupport,
+                            FeatureLevels, out dev, out _, out ctx).Success)
+                    {
+                        _logger.Error("GpuDevice: D3D11 device creation failed entirely");
+                        return;
+                    }
                 }
                 _logger.Warn("GpuDevice created without VideoSupport (zero-copy hw decode unavailable; will use software decode)");
             }
@@ -140,7 +148,11 @@ public sealed class GpuDevice : IDisposable
         _logger.Info($"GpuDevice created (VideoSupport={videoOk}, flags={dev.CreationFlags}, adapter={_adapterDescription})");
     }
 
-    private static bool TryCreate(
+    // Hardware device creation on the given adapter (null = OS default). Does
+    // NOT fall back to WARP — the caller chains fallbacks explicitly so a
+    // failed discrete GPU still tries the default hardware adapter before the
+    // software rasterizer.
+    private static bool TryCreateHardware(
         DeviceCreationFlags flags,
         out ID3D11Device dev,
         out ID3D11DeviceContext ctx,
@@ -148,12 +160,7 @@ public sealed class GpuDevice : IDisposable
         IDXGIAdapter? preferred = null)
     {
         videoOk = (flags & DeviceCreationFlags.VideoSupport) != 0;
-        if (D3D11CreateDevice(preferred, DriverType.Hardware, flags, FeatureLevels, out dev, out _, out ctx).Success)
-            return true;
-        // Last-resort WARP (software rasterizer) — never has VideoSupport, but
-        // keeps something on screen if the hardware driver is unavailable.
-        videoOk = false;
-        return D3D11CreateDevice(null, DriverType.Warp, DeviceCreationFlags.BgraSupport, FeatureLevels, out dev, out _, out ctx).Success;
+        return D3D11CreateDevice(preferred, DriverType.Hardware, flags, FeatureLevels, out dev, out _, out ctx).Success;
     }
 
     private static string? ReadAdapterDescription(ID3D11Device dev)
