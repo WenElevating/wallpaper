@@ -1,5 +1,6 @@
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
+using Vortice.DXGI;
 using static Vortice.Direct3D11.D3D11;
 using FeatureLevel = Vortice.Direct3D.FeatureLevel;
 using WallpaperApp.Services.Logging;
@@ -18,6 +19,13 @@ namespace WallpaperApp.Services.Playback;
 // the BGRA swap chain) and made multithread-protected so the decode threads and
 // the render thread can both drive the immediate context safely.
 //
+// Hardware-specific: by default the device prefers a DISCRETE NVIDIA/AMD GPU
+// (see GpuAdapterSelection) instead of the OS default (the display adapter —
+// the weaker iGPU on hybrid laptops). DWM composites the swap chain to the
+// display, so a dGPU device presents normally. Device creation is LAZY (first
+// property access) so App can apply the PreferDiscreteGpu setting after
+// settings load and before any wallpaper session starts.
+//
 // Failure is graceful: if the device can't be created (or lacks VideoSupport),
 // IsAvailable is false and the system falls back to software decode.
 public sealed class GpuDevice : IDisposable
@@ -31,31 +39,88 @@ public sealed class GpuDevice : IDisposable
     };
 
     private readonly FileLogger _logger;
+    private readonly object _createLock = new();
     private ID3D11Device? _device;
     private ID3D11DeviceContext? _context;
+    private bool _videoOk;
+    private bool _creationAttempted;
     private bool _disposed;
+    private string? _adapterDescription;
 
-    public ID3D11Device Device => _device ?? throw new ObjectDisposedException(nameof(GpuDevice));
-    public ID3D11DeviceContext Context => _context ?? throw new ObjectDisposedException(nameof(GpuDevice));
-    public IntPtr DevicePointer => _device?.NativePointer ?? IntPtr.Zero;
-    public bool IsAvailable => _device != null;
-    // True only when the device supports D3D11VA decode (VideoSupport succeeded).
-    public bool SupportsVideo { get; }
+    // Set by App after settings load, BEFORE any wallpaper session starts (the
+    // device is created lazily on first access). Default true: decode+render
+    // on a discrete GPU (NVDEC is several times faster at 4K than the iGPU).
+    public bool PreferDiscreteGpu { get; set; } = true;
+
+    public ID3D11Device Device => GetDevice();
+    public ID3D11DeviceContext Context => GetContext();
+    public IntPtr DevicePointer => GetDevice().NativePointer;
+    public bool IsAvailable { get { EnsureCreated(); return _device != null; } }
+    public bool SupportsVideo { get { EnsureCreated(); return _videoOk; } }
+
+    // True only once creation has been attempted (used by tests to assert
+    // creation is deferred).
+    internal bool IsCreationAttempted { get { lock (_createLock) return _creationAttempted; } }
+
+    // Description of the adapter the device was actually created on (e.g.
+    // "NVIDIA GeForce RTX 4060 Laptop GPU"). Used by the render probe and logs.
+    public string? AdapterDescription { get { EnsureCreated(); return _adapterDescription; } }
 
     public GpuDevice(FileLogger logger)
     {
         _logger = logger;
+    }
 
-        if (!TryCreate(DeviceCreationFlags.BgraSupport | DeviceCreationFlags.VideoSupport, out var dev, out var ctx, out var videoOk))
+    private ID3D11Device GetDevice()
+    {
+        EnsureCreated();
+        return _device ?? throw new ObjectDisposedException(nameof(GpuDevice));
+    }
+
+    private ID3D11DeviceContext GetContext()
+    {
+        EnsureCreated();
+        return _context ?? throw new ObjectDisposedException(nameof(GpuDevice));
+    }
+
+    private void EnsureCreated()
+    {
+        lock (_createLock)
         {
-            // VideoSupport is rare to fail, but if it does, fall back to a plain
-            // device so the renderer's CPU-upload path still works (decode goes sw).
-            if (!TryCreate(DeviceCreationFlags.BgraSupport, out dev, out ctx, out videoOk))
+            if (_creationAttempted || _disposed) return;
+            _creationAttempted = true;
+            TryCreateCore();
+        }
+    }
+
+    private void TryCreateCore()
+    {
+        string? description = null;
+        using IDXGIAdapter? preferred = PreferDiscreteGpu
+            ? GpuAdapterSelection.EnumeratePreferred(_logger, out description)
+            : null;
+        if (preferred is not null)
+            _logger.Info($"Preferring discrete GPU: {description}");
+
+        var flags = DeviceCreationFlags.BgraSupport | DeviceCreationFlags.VideoSupport;
+        if (!TryCreate(flags, out var dev, out var ctx, out var videoOk, preferred))
+        {
+            // The preferred discrete GPU failed to open (e.g. driver state):
+            // fall back to the OS default adapter.
+            if (preferred is not null)
+                _logger.Warn("Discrete GPU device creation failed; falling back to the default adapter");
+            if (!TryCreate(flags, out dev, out ctx, out videoOk))
             {
-                logger.Error("GpuDevice: D3D11 device creation failed entirely");
-                return;
+                // VideoSupport is rare to fail, but if it does, fall back to a
+                // plain device so the renderer's CPU-upload path still works
+                // (decode goes sw).
+                if (!TryCreate(DeviceCreationFlags.BgraSupport, out dev, out ctx, out videoOk))
+                {
+                    _logger.Error("GpuDevice: D3D11 device creation failed entirely");
+                    return;
+                }
+                _logger.Warn("GpuDevice created without VideoSupport (zero-copy hw decode unavailable; will use software decode)");
             }
-            logger.Warn("GpuDevice created without VideoSupport (zero-copy hw decode unavailable; will use software decode)");
         }
 
         try
@@ -65,19 +130,25 @@ public sealed class GpuDevice : IDisposable
         }
         catch (Exception ex)
         {
-            logger.Warn($"GpuDevice: ID3D11Multithread setup failed: {ex.Message}");
+            _logger.Warn($"GpuDevice: ID3D11Multithread setup failed: {ex.Message}");
         }
 
+        _adapterDescription = ReadAdapterDescription(dev);
         _device = dev;
         _context = ctx;
-        SupportsVideo = videoOk;
-        logger.Info($"GpuDevice created (VideoSupport={SupportsVideo}, flags={dev.CreationFlags})");
+        _videoOk = videoOk;
+        _logger.Info($"GpuDevice created (VideoSupport={videoOk}, flags={dev.CreationFlags}, adapter={_adapterDescription})");
     }
 
-    private static bool TryCreate(DeviceCreationFlags flags, out ID3D11Device dev, out ID3D11DeviceContext ctx, out bool videoOk)
+    private static bool TryCreate(
+        DeviceCreationFlags flags,
+        out ID3D11Device dev,
+        out ID3D11DeviceContext ctx,
+        out bool videoOk,
+        IDXGIAdapter? preferred = null)
     {
         videoOk = (flags & DeviceCreationFlags.VideoSupport) != 0;
-        if (D3D11CreateDevice(null, DriverType.Hardware, flags, FeatureLevels, out dev, out _, out ctx).Success)
+        if (D3D11CreateDevice(preferred, DriverType.Hardware, flags, FeatureLevels, out dev, out _, out ctx).Success)
             return true;
         // Last-resort WARP (software rasterizer) — never has VideoSupport, but
         // keeps something on screen if the hardware driver is unavailable.
@@ -85,10 +156,28 @@ public sealed class GpuDevice : IDisposable
         return D3D11CreateDevice(null, DriverType.Warp, DeviceCreationFlags.BgraSupport, FeatureLevels, out dev, out _, out ctx).Success;
     }
 
+    private static string? ReadAdapterDescription(ID3D11Device dev)
+    {
+        try
+        {
+            using var dxgiDevice = dev.QueryInterface<IDXGIDevice>();
+            using var adapter = dxgiDevice.GetAdapter();
+            using var adapter1 = adapter.QueryInterface<IDXGIAdapter1>();
+            return adapter1.Description1.Description;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        lock (_createLock)
+        {
+            if (_disposed) return;
+            _disposed = true;
+        }
         _context?.Dispose();
         _device?.Dispose();
     }
