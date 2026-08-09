@@ -91,6 +91,7 @@ return exitCode;
 static int RunDxgiZeroCopyProbe(IntPtr hwnd, FileLogger logger)
 {
     using var gpu = new GpuDevice(logger);
+    Console.WriteLine($"DXGI probe device adapter: {gpu.AdapterDescription ?? "<none>"}");
     if (!gpu.IsAvailable)
     {
         Console.WriteLine("DXGI probe skipped: no D3D11 device available");
