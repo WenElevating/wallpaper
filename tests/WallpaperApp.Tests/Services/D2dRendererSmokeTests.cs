@@ -5,7 +5,7 @@ namespace WallpaperApp.Tests.Services;
 public sealed class D2dRendererSmokeTests
 {
     [Fact]
-    public async Task Present_OnRealHwnd_SucceedsInProbeProcess()
+    public async Task RenderProbe_BothRendererPaths_PresentOnRealHwnd()
     {
         var probePath = ResolveProbePath();
         var psi = new ProcessStartInfo

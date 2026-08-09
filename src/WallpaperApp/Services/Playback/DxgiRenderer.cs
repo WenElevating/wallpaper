@@ -72,6 +72,12 @@ public sealed class DxgiRenderer : IFrameRenderer
 
     private int _frameWidth;
     private int _frameHeight;
+    // Swap chain + viewport dimensions. The GPU path sizes these to the WINDOW
+    // (client rect) so the shader fill rate matches the monitor, not the video;
+    // the CPU-upload path keeps them at the frame size (its row copy has no
+    // scaling). Populated once at first swap chain creation.
+    private int _windowW;
+    private int _windowH;
     private int _presentCount;
     private bool _disposed;
 
@@ -229,11 +235,16 @@ public sealed class DxgiRenderer : IFrameRenderer
         var dbg = _presentCount < 3;
         if (dbg) _logger.Info($"zc enter: swapchain={_swapChain is not null} dev={_device is not null} zcInited={_zcInited} vs={_vs is not null} nv12={_nv12Tex is not null} nv12dims={_nv12W}x{_nv12H}/{frame.Width}x{frame.Height}");
 
-        if (_swapChain is null && !EnsureResources(frame.Width, frame.Height))
+        // Swap chain + viewport track the WINDOW (client) size, not the video
+        // size: a 4K video on a smaller display otherwise renders 4K pixels the
+        // compositor then scales down. The shader samples the video-sized NV12
+        // texture by UV, so a window-sized draw scales correctly and cheaply.
+        var (swapW, swapH) = EnsureWindowSize(frame.Width, frame.Height);
+        if (_swapChain is null && !EnsureResources(swapW, swapH))
             return false;
-        if (frame.Width != _frameWidth || frame.Height != _frameHeight)
+        if (_frameWidth != swapW || _frameHeight != swapH)
         {
-            if (!ResizeResources(frame.Width, frame.Height)) return false;
+            if (!ResizeResources(swapW, swapH)) return false;
         }
 
         void Step(string name, Action a) { if (dbg) _logger.Info($"zc step: {name}"); a(); }
@@ -290,7 +301,7 @@ public sealed class DxgiRenderer : IFrameRenderer
             var rtv = _rtvs[(int)_swapChain.CurrentBackBufferIndex];
             if (rtv is null) return false;
             Step("om-rtv", () => _context.OMSetRenderTargets(rtv, null));
-            Step("viewport", () => _context.RSSetViewports(new[] { new Viewport(0, 0, frame.Width, frame.Height) }));
+            Step("viewport", () => _context.RSSetViewports(new[] { new Viewport(0, 0, swapW, swapH) }));
             Step("topology", () => _context.IASetPrimitiveTopology(PrimitiveTopology.TriangleList));
             Step("vs", () => _context.VSSetShader(_vs));
             Step("ps", () => _context.PSSetShader(_ps));
@@ -388,6 +399,33 @@ public sealed class DxgiRenderer : IFrameRenderer
         _rtvs[idx] = _device.CreateRenderTargetView(buf);
     }
 
+    // Decides the swap chain size: the window's client rect when it is valid,
+    // else the video frame size (old behavior). The GPU zero-copy path draws a
+    // window-sized fullscreen triangle that samples the video-sized NV12 texture
+    // by UV, so a 4K video on a 2560x1600 window shades 2560x1600 pixels — not
+    // 3840x2160 — and DWM has no downscale to do. Falls back to the frame size
+    // when the client rect is unavailable/degenerate (and always for PresentCpu,
+    // whose row-by-row copy cannot scale).
+    internal static (int Width, int Height) ComputeSwapChainSize(
+        int frameWidth, int frameHeight, NativeMethods.RECT? clientRect)
+    {
+        if (clientRect is { } rc && rc.Right > rc.Left && rc.Bottom > rc.Top)
+            return (rc.Right - rc.Left, rc.Bottom - rc.Top);
+        return (frameWidth, frameHeight);
+    }
+
+    // Returns the window size, resolving it from the client rect once. Never
+    // re-queries per frame; the wallpaper window size is fixed at creation.
+    private (int Width, int Height) EnsureWindowSize(int fallbackWidth, int fallbackHeight)
+    {
+        if (_windowW <= 0 || _windowH <= 0)
+        {
+            var ok = NativeMethods.GetClientRect(_hwnd, out var rc);
+            (_windowW, _windowH) = ComputeSwapChainSize(fallbackWidth, fallbackHeight, ok ? rc : null);
+        }
+        return (_windowW, _windowH);
+    }
+
     private bool EnsureResources(int frameWidth, int frameHeight)
     {
         if (_device is null)
@@ -433,7 +471,7 @@ public sealed class DxgiRenderer : IFrameRenderer
             CreateStagingTexture(frameWidth, frameHeight);
             _frameWidth = frameWidth;
             _frameHeight = frameHeight;
-            _logger.Info($"DXGI swap chain created on window {_hwnd} (frame {frameWidth}x{frameHeight})");
+            _logger.Info($"DXGI swap chain created on window {_hwnd} (buffer {frameWidth}x{frameHeight})");
         }
         return true;
     }
