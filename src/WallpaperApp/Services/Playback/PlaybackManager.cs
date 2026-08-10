@@ -20,8 +20,10 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
     private readonly List<Task> _policyTasks = new();
     private readonly Dictionary<Guid, SessionDescriptor> _sessionDescriptors = new();
     private readonly SemaphoreSlim _policySwitchGate = new(1, 1);
-    private PlaybackPerformancePolicy _performancePolicy =
+    private readonly HashSet<ScenePerformanceState> _sceneStates = new();
+    private PlaybackPerformancePolicy _basePolicy =
         PlaybackPerformancePolicy.FromProfile(WallpaperPerformanceProfile.Balanced);
+    private int _sceneIntervalUs; // strongest active scene interval; 0 = none
     private bool _disposed;
 
     // Set by the composition root once LibraryService has applied the active
@@ -87,7 +89,7 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         CancellationToken ct = default)
     {
         var sourcePath = filePath;
-        var path = PlaybackPathResolver?.Invoke(sourcePath, _performancePolicy.Profile) ?? sourcePath;
+        var path = PlaybackPathResolver?.Invoke(sourcePath, _basePolicy.Profile) ?? sourcePath;
         return SetWallpaperCoreAsync(monitorId, wallpaperId, path, monitorX, monitorY, monitorWidth, monitorHeight, ct, sourcePath, TimeSpan.Zero, null);
     }
 
@@ -164,7 +166,7 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         lock (_lock)
         {
             _sessions.TryGetValue(monitorId, out oldSession);
-            performancePolicy = _performancePolicy;
+            performancePolicy = EffectivePerformancePolicy();
         }
 
         // The session owns the full pipeline (window + renderer + backend) and
@@ -243,12 +245,11 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
         lock (_lock)
         {
             if (_disposed) return;
-            _performancePolicy = policy;
+            _basePolicy = policy;
             sessions = _sessions.Values.ToArray();
         }
 
-        foreach (var session in sessions)
-            session.UpdatePerformancePolicy(policy);
+        PushEffectivePolicy(sessions);
 
         if (PlaybackPathResolver != null)
         {
@@ -270,6 +271,35 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
                 TaskScheduler.Default);
         }
     }
+
+    // Scene states (battery, lock screen) transiently tighten the present gate
+    // WITHOUT re-resolving proxy paths: only the base profile changes the
+    // wallpaper file. The composed policy is pushed to live sessions; sessions
+    // started later pick it up via EffectivePerformancePolicy.
+    public virtual void SetSceneState(ScenePerformanceState state, bool active)
+    {
+        PlaybackSession[] sessions;
+        lock (_lock)
+        {
+            if (_disposed) return;
+            if (active) _sceneStates.Add(state); else _sceneStates.Remove(state);
+            _sceneIntervalUs = ScenePerformance.StrongestIntervalUs(_sceneStates);
+            sessions = _sessions.Values.ToArray();
+        }
+        PushEffectivePolicy(sessions);
+    }
+
+    private void PushEffectivePolicy(PlaybackSession[] sessions)
+    {
+        var effective = EffectivePerformancePolicy();
+        foreach (var session in sessions)
+            session.UpdatePerformancePolicy(effective);
+    }
+
+    private PlaybackPerformancePolicy EffectivePerformancePolicy()
+        => _sceneIntervalUs > 0
+            ? _basePolicy with { SceneIntervalUs = _sceneIntervalUs }
+            : _basePolicy;
 
     private async Task SwitchActiveSessionsForPolicyAsync(PlaybackPerformancePolicy policy, PlaybackSession[] snapshot)
     {
@@ -330,7 +360,7 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
 
         foreach (var (session, descriptor) in active)
         {
-            var path = PlaybackPathResolver?.Invoke(descriptor.SourcePath, _performancePolicy.Profile)
+            var path = PlaybackPathResolver?.Invoke(descriptor.SourcePath, _basePolicy.Profile)
                 ?? descriptor.SourcePath;
             await SetWallpaperCoreAsync(
                 session.MonitorId,

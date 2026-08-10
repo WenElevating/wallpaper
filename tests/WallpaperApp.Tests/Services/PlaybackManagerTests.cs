@@ -317,6 +317,111 @@ public sealed class PlaybackManagerTests : IDisposable
         Assert.Equal(15, session.CurrentPerformancePolicy.MaxPresentFps);
     }
 
+    // Scene states (battery, lock screen) transiently tighten the present gate
+    // by composing the base profile with a scene interval override. Scene
+    // changes must NOT re-resolve proxy paths — the wallpaper file only ever
+    // changes when the base profile changes.
+    [Fact]
+    public async Task SetSceneState_PushesEffectivePolicyToSessions()
+    {
+        using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        using var backend = new FakePlaybackBackend(CreateFrame());
+        using var renderer = new FakeRenderer(true);
+        using var desktopHost = new DesktopHost(_logger);
+        using var manager = new PlaybackManager(
+            _logger, desktopHost,
+            createSurface: (_, _, _, _) => surface,
+            createRenderer: (_, _, _, _) => renderer,
+            createBackend: () => backend,
+            createFallbackBackend: () => new FakePlaybackBackend());
+
+        var monitorId = Guid.NewGuid();
+        Assert.True(await manager.SetWallpaperAsync(monitorId, Guid.NewGuid(), "sample.mp4", 0, 0, 1, 1));
+        Assert.Equal(33_333, manager.GetPerformancePolicyForTests(monitorId)!.Value.MinFrameIntervalUs);
+
+        manager.SetSceneState(ScenePerformanceState.Locked, true);
+        Assert.Equal(200_000, manager.GetPerformancePolicyForTests(monitorId)!.Value.MinFrameIntervalUs);
+
+        manager.SetSceneState(ScenePerformanceState.Locked, false);
+        Assert.Equal(33_333, manager.GetPerformancePolicyForTests(monitorId)!.Value.MinFrameIntervalUs);
+    }
+
+    [Fact]
+    public async Task SetSceneState_StrongestActiveStateWins()
+    {
+        using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        using var backend = new FakePlaybackBackend(CreateFrame());
+        using var renderer = new FakeRenderer(true);
+        using var desktopHost = new DesktopHost(_logger);
+        using var manager = new PlaybackManager(
+            _logger, desktopHost,
+            createSurface: (_, _, _, _) => surface,
+            createRenderer: (_, _, _, _) => renderer,
+            createBackend: () => backend,
+            createFallbackBackend: () => new FakePlaybackBackend());
+
+        var monitorId = Guid.NewGuid();
+        Assert.True(await manager.SetWallpaperAsync(monitorId, Guid.NewGuid(), "sample.mp4", 0, 0, 1, 1));
+
+        manager.SetSceneState(ScenePerformanceState.Battery, true);
+        Assert.Equal(66_666, manager.GetPerformancePolicyForTests(monitorId)!.Value.MinFrameIntervalUs);
+
+        manager.SetSceneState(ScenePerformanceState.Locked, true);
+        Assert.Equal(200_000, manager.GetPerformancePolicyForTests(monitorId)!.Value.MinFrameIntervalUs);
+
+        manager.SetSceneState(ScenePerformanceState.Locked, false);
+        Assert.Equal(66_666, manager.GetPerformancePolicyForTests(monitorId)!.Value.MinFrameIntervalUs);
+
+        manager.SetSceneState(ScenePerformanceState.Battery, false);
+        Assert.Equal(33_333, manager.GetPerformancePolicyForTests(monitorId)!.Value.MinFrameIntervalUs);
+    }
+
+    [Fact]
+    public async Task SetWallpaper_WhileSceneActive_StartsWithEffectivePolicy()
+    {
+        using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        using var backend = new FakePlaybackBackend(CreateFrame());
+        using var renderer = new FakeRenderer(true);
+        using var desktopHost = new DesktopHost(_logger);
+        using var manager = new PlaybackManager(
+            _logger, desktopHost,
+            createSurface: (_, _, _, _) => surface,
+            createRenderer: (_, _, _, _) => renderer,
+            createBackend: () => backend,
+            createFallbackBackend: () => new FakePlaybackBackend());
+
+        manager.SetSceneState(ScenePerformanceState.Locked, true);
+
+        var monitorId = Guid.NewGuid();
+        Assert.True(await manager.SetWallpaperAsync(monitorId, Guid.NewGuid(), "sample.mp4", 0, 0, 1, 1));
+        Assert.Equal(200_000, manager.GetPerformancePolicyForTests(monitorId)!.Value.MinFrameIntervalUs);
+    }
+
+    [Fact]
+    public async Task SceneChange_DoesNotReResolveProxyPath()
+    {
+        using var surface = new FakeWallpaperSurface(new IntPtr(1), 1, 1);
+        using var backend = new FakePlaybackBackend(CreateFrame());
+        using var renderer = new FakeRenderer(true);
+        using var desktopHost = new DesktopHost(_logger);
+        using var manager = new PlaybackManager(
+            _logger, desktopHost,
+            createSurface: (_, _, _, _) => surface,
+            createRenderer: (_, _, _, _) => renderer,
+            createBackend: () => backend,
+            createFallbackBackend: () => new FakePlaybackBackend());
+
+        int resolverCalls = 0;
+        manager.PlaybackPathResolver = (source, profile) => { resolverCalls++; return source; };
+
+        var monitorId = Guid.NewGuid();
+        Assert.True(await manager.SetWallpaperAsync(monitorId, Guid.NewGuid(), "sample.mp4", 0, 0, 1, 1));
+        Assert.Equal(1, resolverCalls);
+
+        manager.SetSceneState(ScenePerformanceState.Locked, true);
+        Assert.Equal(1, resolverCalls);
+    }
+
     public void Dispose()
     {
         _logger.Dispose();
