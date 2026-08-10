@@ -31,7 +31,12 @@
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="{loc:Loc WallpaperPerformanceLabel}" VerticalAlignment="Center" FontSize="14"/>
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0">
+                        <TextBlock Text="{loc:Loc WallpaperPerformanceLabel}" FontSize="14"/>
+                        <TextBlock Text="{loc:Loc WallpaperPerformanceHint}"
+                                   Foreground="{StaticResource MutedTextBrush}" FontSize="11"
+                                   Margin="0,2,0,0" TextWrapping="Wrap"/>
+                    </StackPanel>
                     <ComboBox Grid.Column="1" Width="150"
                               SelectedValue="{Binding SelectedPerformanceProfile, Mode=TwoWay}"
                               SelectedValuePath="Tag">

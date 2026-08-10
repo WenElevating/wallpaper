@@ -175,6 +175,9 @@
   <data name="WallpaperPerformanceLabel" xml:space="preserve">
     <value>Wallpaper performance</value>
   </data>
+  <data name="WallpaperPerformanceHint" xml:space="preserve">
+    <value>Quality plays the original file at full resolution; Balanced/Saver use lighter proxy copies. Frame rate is reduced automatically while on battery and while the desktop is locked.</value>
+  </data>
   <data name="PerformanceProfileQuality" xml:space="preserve">
     <value>Quality</value>
   </data>

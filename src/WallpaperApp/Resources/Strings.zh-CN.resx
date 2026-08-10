@@ -175,6 +175,9 @@
   <data name="WallpaperPerformanceLabel" xml:space="preserve">
     <value>壁纸性能</value>
   </data>
+  <data name="WallpaperPerformanceHint" xml:space="preserve">
+    <value>画质档播放原片;平衡/省电档使用压缩副本。电池供电与锁屏时自动降低帧率。</value>
+  </data>
   <data name="PerformanceProfileQuality" xml:space="preserve">
     <value>画质优先</value>
   </data>

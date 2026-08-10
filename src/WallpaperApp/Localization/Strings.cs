@@ -67,6 +67,7 @@ internal static class Strings
     public static string PauseOnRemoteSessionLabel => Get(nameof(PauseOnRemoteSessionLabel));
     public static string PreferDiscreteGpuLabel => Get(nameof(PreferDiscreteGpuLabel));
     public static string WallpaperPerformanceLabel => Get(nameof(WallpaperPerformanceLabel));
+    public static string WallpaperPerformanceHint => Get(nameof(WallpaperPerformanceHint));
     public static string PerformanceProfileQuality => Get(nameof(PerformanceProfileQuality));
     public static string PerformanceProfileBalanced => Get(nameof(PerformanceProfileBalanced));
     public static string PerformanceProfileSaver => Get(nameof(PerformanceProfileSaver));
