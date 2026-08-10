@@ -50,7 +50,16 @@ public sealed class LockStateDetector : IDisposable
     }
 
     private void OnSessionSwitch(object? sender, Microsoft.Win32.SessionSwitchEventArgs e)
-        => SetLocked(e.Reason == Microsoft.Win32.SessionSwitchReason.SessionLock);
+    {
+        try
+        {
+            SetLocked(e.Reason == Microsoft.Win32.SessionSwitchReason.SessionLock);
+        }
+        catch (Exception ex)
+        {
+            _logger.Warn($"Lock-state event failed: {ex.Message}");
+        }
+    }
 
     private void Poll()
     {
@@ -87,6 +96,7 @@ public sealed class LockStateDetector : IDisposable
         try
         {
             var threadDesktop = NativeMethods.GetThreadDesktop(NativeMethods.GetCurrentThreadId());
+            if (threadDesktop == IntPtr.Zero) return false;
             return input != threadDesktop;
         }
         finally
