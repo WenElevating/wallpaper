@@ -184,7 +184,7 @@ public sealed class MainViewModelWallpaperCommandsTests : IDisposable
 
     private static PlaybackPerformancePolicy CurrentPolicy(MainViewModel vm)
     {
-        var field = typeof(PlaybackManager).GetField("_performancePolicy",
+        var field = typeof(PlaybackManager).GetField("_basePolicy",
             System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
         Assert.NotNull(field);
         return Assert.IsType<PlaybackPerformancePolicy>(field.GetValue(vm.PlaybackForTests));
