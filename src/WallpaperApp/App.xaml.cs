@@ -23,6 +23,7 @@ public partial class App : Application
     private ServiceProvider? _serviceProvider;
     private TrayIcon? _trayIcon;
     private PowerAwareController? _powerAware;
+    private LockStateDetector? _lockStateDetector;
     private RemoteSessionDetector? _remoteSession;
     private PlaylistCoordinator? _playlists;
     private ExplorerWatcher? _explorerWatcher;
@@ -204,6 +205,13 @@ public partial class App : Application
             };
             visibility.Start();
 
+            // Lock-state detector: the lock screen still shows the wallpaper, so
+            // instead of pausing (which would blank it) the scene throttle drops
+            // its present rate to 5 FPS — the background stays alive while the
+            // GPU cost drops ~84%.
+            _lockStateDetector = _serviceProvider.GetRequiredService<LockStateDetector>();
+            _lockStateDetector.Start();
+
             _powerAware = new PowerAwareController(logger, playback, currentSettings);
             _powerAware.Start();
 
@@ -262,6 +270,7 @@ public partial class App : Application
         services.AddSingleton<MonitorManager>();
         services.AddSingleton<FullscreenDetector>();
         services.AddSingleton<WallpaperVisibilityDetector>();
+        services.AddSingleton<LockStateDetector>();
         services.AddSingleton<GlobalHotkeyService>();
         // F5: random wallpaper switcher used by the tray "Shuffle" menu item.
         // Singleton because its per-monitor recent-history is the whole feature —
@@ -289,6 +298,8 @@ public partial class App : Application
 
             var visibility = _serviceProvider.GetService<WallpaperVisibilityDetector>();
             visibility?.Dispose();
+
+            _lockStateDetector?.Dispose();
 
             var hotkeys = _serviceProvider.GetService<GlobalHotkeyService>();
             hotkeys?.Dispose();
