@@ -575,4 +575,19 @@ internal static partial class NativeMethods
     internal const uint MOD_NOREPEAT = 0x4000; // 按住不重复触发
 
     internal const int WM_HOTKEY = 0x0312;
+
+    // --- Desktop lock detection (LockStateDetector) ---
+    internal const uint DESKTOP_READOBJECTS = 0x0001;
+
+    [DllImport("user32.dll", SetLastError = true)]
+    internal static extern IntPtr OpenInputDesktop(uint dwFlags, bool fInherit, uint dwDesiredAccess);
+
+    [DllImport("user32.dll")]
+    internal static extern IntPtr GetThreadDesktop(uint dwThreadId);
+
+    [DllImport("user32.dll")]
+    internal static extern bool CloseDesktop(IntPtr hDesktop);
+
+    [DllImport("kernel32.dll")]
+    internal static extern uint GetCurrentThreadId();
 }
