@@ -169,10 +169,20 @@ public sealed class PlaybackSession : IDisposable
     {
     }
 
-    internal static bool ShouldPresentFrame(long nowUs, long lastPresentedUs, PlaybackPerformancePolicy policy)
+    internal static bool ShouldPresentFrame(long nowUs, long lastPresentedUs, long lastPresentCostUs, PlaybackPerformancePolicy policy)
     {
-        var minIntervalUs = policy.MinFrameIntervalUs;
-        return minIntervalUs <= 0 || lastPresentedUs < 0 || nowUs - lastPresentedUs >= minIntervalUs;
+        if (lastPresentedUs < 0) return true; // first frame always presents
+        var intervalUs = policy.MinFrameIntervalUs;
+        if (intervalUs <= 0) return true;     // uncapped (legacy policy)
+        var elapsedUs = nowUs - lastPresentedUs;
+        if (elapsedUs < intervalUs) return false;
+        // Adaptive budget: when the previous Present cost more than the
+        // profile's budget, hold one extra interval before presenting again.
+        // The effective rate halves under GPU load and recovers when presents
+        // get cheap again — the profile always does something REAL regardless
+        // of content/hardware, unlike a fixed FPS cap.
+        return policy.MaxPresentCostUs <= 0 || lastPresentCostUs <= policy.MaxPresentCostUs
+            || elapsedUs >= intervalUs * 2;
     }
 
     public Task<bool> StartAsync(CancellationToken ct = default)
@@ -370,6 +380,7 @@ public sealed class PlaybackSession : IDisposable
 
         var lastPts = -1L;
         var lastPresentedUs = -1L;
+        var lastPresentCostUs = 0L;
         var lastPerfLogUs = _clock.NowUs;
         var decodedFrames = 0L;
         var presentedFrames = 0L;
@@ -392,7 +403,7 @@ public sealed class PlaybackSession : IDisposable
             var hardware = _backend.IsHardwareDecoding ? "d3d11va" : "software";
             var zeroCopy = _backend is FfmpegBackend { PreferZeroCopy: true } ? "true" : "false";
             var windowSeconds = Math.Max(0.001, (nowUs - lastPerfLogUs) / 1_000_000.0);
-            _logger.Debug($"playback_perf monitor={_monitorId} profile={policy.Profile} source=\"{source}\" size={_backend.VideoWidth}x{_backend.VideoHeight} target_fps={policy.TargetFps?.ToString() ?? "native"} decoded={decodedFrames} presented={presentedFrames} skipped={skippedFrames} present_fps={presentedFrames / windowSeconds:F2} avg_interval_us={avgPresentIntervalUs} max_interval_us={maxPresentIntervalUs} hardware={hardware} zero_copy={zeroCopy}");
+            _logger.Debug($"playback_perf monitor={_monitorId} profile={policy.Profile} source=\"{source}\" size={_backend.VideoWidth}x{_backend.VideoHeight} target_fps={policy.TargetFps?.ToString() ?? "native"} min_interval_us={policy.MinFrameIntervalUs} budget_us={policy.MaxPresentCostUs} decoded={decodedFrames} presented={presentedFrames} skipped={skippedFrames} present_fps={presentedFrames / windowSeconds:F2} avg_interval_us={avgPresentIntervalUs} max_interval_us={maxPresentIntervalUs} hardware={hardware} zero_copy={zeroCopy}");
             decodedFrames = 0;
             presentedFrames = 0;
             skippedFrames = 0;
@@ -447,7 +458,7 @@ public sealed class PlaybackSession : IDisposable
             }
 
             var nowUs = _clock.NowUs;
-            if (!ShouldPresentFrame(nowUs, lastPresentedUs, policy))
+            if (!ShouldPresentFrame(nowUs, lastPresentedUs, lastPresentCostUs, policy))
             {
                 skippedFrames++;
                 LogPerformanceSummary(policy, nowUs);
@@ -455,7 +466,10 @@ public sealed class PlaybackSession : IDisposable
                 continue;
             }
 
+            var presentSw = Stopwatch.StartNew();
             var ok = _renderer!.Present(frame);
+            presentSw.Stop();
+            lastPresentCostUs = presentSw.ElapsedTicks * 1_000_000L / Stopwatch.Frequency;
             presentedFrames++;
             if (lastPresentClockUs >= 0)
             {

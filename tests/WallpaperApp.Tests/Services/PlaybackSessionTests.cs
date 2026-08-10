@@ -172,15 +172,15 @@ public sealed class PlaybackSessionTests : IDisposable
         var interval = policy.MinFrameIntervalUs; // 1_000_000 / 30 = 33_333us
 
         // First frame always presents (lastPresentedUs < 0 sentinel).
-        Assert.True(PlaybackSession.ShouldPresentFrame(0, -1, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(0, -1, 0, policy));
         // Frame 1us after a present: well under the 33.3ms interval => skip.
-        Assert.False(PlaybackSession.ShouldPresentFrame(1, 0, policy));
+        Assert.False(PlaybackSession.ShouldPresentFrame(1, 0, 0, policy));
         // Frame exactly at the interval boundary => present (>= interval).
-        Assert.True(PlaybackSession.ShouldPresentFrame(interval, 0, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(interval, 0, 0, policy));
         // Frame one tick before the interval => still skip.
-        Assert.False(PlaybackSession.ShouldPresentFrame(interval - 1, 0, policy));
+        Assert.False(PlaybackSession.ShouldPresentFrame(interval - 1, 0, 0, policy));
         // Frame comfortably past the interval => present.
-        Assert.True(PlaybackSession.ShouldPresentFrame(interval + 5_000, 0, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(interval + 5_000, 0, 0, policy));
     }
 
     [Fact]
@@ -191,9 +191,9 @@ public sealed class PlaybackSessionTests : IDisposable
 
         // Quality now caps presents at 30 FPS like the other profiles.
         Assert.Equal(33_333, policy.MinFrameIntervalUs);
-        Assert.True(PlaybackSession.ShouldPresentFrame(0, -1, policy));
-        Assert.False(PlaybackSession.ShouldPresentFrame(20_000, 0, policy));
-        Assert.True(PlaybackSession.ShouldPresentFrame(40_000, 0, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(0, -1, 0, policy));
+        Assert.False(PlaybackSession.ShouldPresentFrame(20_000, 0, 0, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(40_000, 0, 0, policy));
     }
 
     [Fact]
@@ -205,9 +205,55 @@ public sealed class PlaybackSessionTests : IDisposable
         // Saver uses a 30 FPS proxy so the cadence stays continuous rather than
         // forcing the old 15 FPS presentation pattern.
         Assert.Equal(33_333, policy.MinFrameIntervalUs);
-        Assert.True(PlaybackSession.ShouldPresentFrame(0, -1, policy));
-        Assert.False(PlaybackSession.ShouldPresentFrame(20_000, 0, policy));
-        Assert.True(PlaybackSession.ShouldPresentFrame(40_000, 0, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(0, -1, 0, policy));
+        Assert.False(PlaybackSession.ShouldPresentFrame(20_000, 0, 0, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(40_000, 0, 0, policy));
+    }
+
+    // Adaptive budget gate: when the previous Present cost more than the
+    // profile's MaxPresentCostUs, the next present is held for TWO floor
+    // intervals instead of one. Under sustained GPU load the effective rate
+    // halves; when presents get cheap again the rate recovers automatically.
+    [Fact]
+    public void ShouldPresentFrame_BlownBudget_HoldsOneExtraInterval()
+    {
+        var policy = PlaybackPerformancePolicy.FromProfile(
+            WallpaperApp.Models.WallpaperPerformanceProfile.Balanced); // budget 11_111us
+
+        // Present cost 20ms > 11.1ms budget: at 33.3ms elapsed the floor gate
+        // passes but the budget gate still holds.
+        Assert.False(PlaybackSession.ShouldPresentFrame(33_333, 0, 20_000, policy));
+        // After a full extra interval the frame is allowed.
+        Assert.True(PlaybackSession.ShouldPresentFrame(66_666, 0, 20_000, policy));
+    }
+
+    [Fact]
+    public void ShouldPresentFrame_WithinBudget_PresentsAtFloorRate()
+    {
+        var policy = PlaybackPerformancePolicy.FromProfile(
+            WallpaperApp.Models.WallpaperPerformanceProfile.Balanced);
+
+        Assert.False(PlaybackSession.ShouldPresentFrame(33_332, 0, 5_000, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(33_333, 0, 5_000, policy));
+    }
+
+    [Fact]
+    public void ShouldPresentFrame_NoBudgetConfigured_NeverHoldsExtraInterval()
+    {
+        var policy = new PlaybackPerformancePolicy(60); // legacy ctor: budget 0 = disabled
+
+        Assert.True(PlaybackSession.ShouldPresentFrame(16_666, 0, 50_000, policy));
+    }
+
+    [Fact]
+    public void ShouldPresentFrame_SceneInterval_OverridesFloor()
+    {
+        var policy = PlaybackPerformancePolicy.FromProfile(
+            WallpaperApp.Models.WallpaperPerformanceProfile.Quality) with { SceneIntervalUs = 200_000 };
+
+        Assert.False(PlaybackSession.ShouldPresentFrame(33_333, 0, 0, policy));
+        Assert.False(PlaybackSession.ShouldPresentFrame(199_999, 0, 0, policy));
+        Assert.True(PlaybackSession.ShouldPresentFrame(200_000, 0, 0, policy));
     }
 
     // A session is paused while ANY reason is present and only resumes once the
