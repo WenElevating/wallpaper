@@ -57,4 +57,50 @@ public sealed class PlaybackPerformancePolicyTests
         Assert.Equal(WallpaperPerformanceProfile.Saver, policy.Profile);
         Assert.Equal(30, policy.TargetFps);
     }
+
+    [Theory]
+    [InlineData(WallpaperPerformanceProfile.Quality, 16_666)]
+    [InlineData(WallpaperPerformanceProfile.Balanced, 11_111)]
+    [InlineData(WallpaperPerformanceProfile.Saver, 8_333)]
+    public void FromProfile_AssignsAdaptivePresentBudget(WallpaperPerformanceProfile profile, int expected)
+    {
+        var policy = PlaybackPerformancePolicy.FromProfile(profile);
+
+        Assert.Equal(expected, policy.MaxPresentCostUs);
+    }
+
+    [Fact]
+    public void MinFrameIntervalUs_UsesSceneInterval_WhenSet()
+    {
+        var policy = PlaybackPerformancePolicy.FromProfile(WallpaperPerformanceProfile.Balanced)
+            with { SceneIntervalUs = 200_000 };
+
+        Assert.Equal(200_000, policy.MinFrameIntervalUs);
+    }
+
+    [Fact]
+    public void MinFrameIntervalUs_IgnoresSceneInterval_WhenZero()
+    {
+        var policy = PlaybackPerformancePolicy.FromProfile(WallpaperPerformanceProfile.Balanced);
+
+        Assert.Equal(33_333, policy.MinFrameIntervalUs);
+    }
+
+    [Theory]
+    [InlineData(ScenePerformanceState.Battery, 66_666)]
+    [InlineData(ScenePerformanceState.Locked, 200_000)]
+    public void SceneInterval_ReturnsPerStateInterval(ScenePerformanceState state, int expected)
+    {
+        Assert.Equal(expected, ScenePerformance.SceneIntervalUs(state));
+    }
+
+    [Fact]
+    public void StrongestIntervalUs_PicksMostRestrictiveActiveState()
+    {
+        Assert.Equal(200_000, ScenePerformance.StrongestIntervalUs(
+            new[] { ScenePerformanceState.Battery, ScenePerformanceState.Locked }));
+        Assert.Equal(66_666, ScenePerformance.StrongestIntervalUs(
+            new[] { ScenePerformanceState.Battery }));
+        Assert.Equal(0, ScenePerformance.StrongestIntervalUs(Array.Empty<ScenePerformanceState>()));
+    }
 }
