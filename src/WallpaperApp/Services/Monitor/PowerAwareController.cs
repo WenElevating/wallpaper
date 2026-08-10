@@ -25,6 +25,7 @@ public sealed class PowerAwareController : IDisposable
     private readonly FileLogger _logger;
     private readonly PlaybackManager _playback;
     private readonly Func<AppSettings> _getSettings;
+    private readonly Func<bool> _isOnBattery;
     private readonly System.Timers.Timer _pollTimer;
     private bool _disposed;
     private bool _pausedForBattery; // tracks the current Power pause so we toggle only on change
@@ -33,20 +34,22 @@ public sealed class PowerAwareController : IDisposable
         FileLogger logger,
         PlaybackManager playback,
         Func<AppSettings> getSettings,
+        Func<bool>? isOnBattery = null,
         int pollIntervalMs = 30000)
     {
         _logger = logger;
         _playback = playback;
         _getSettings = getSettings;
+        _isOnBattery = isOnBattery ?? IsOnBattery;
         _pollTimer = new System.Timers.Timer(pollIntervalMs);
-        _pollTimer.Elapsed += (_, _) => Poll();
+        _pollTimer.Elapsed += (_, _) => PollOnce();
     }
 
     public void Start()
     {
         Microsoft.Win32.SystemEvents.PowerModeChanged += OnPowerModeChanged;
         _pollTimer.Start();
-        Poll(); // establish the correct initial state immediately
+        PollOnce(); // establish the correct initial state immediately
         _logger.Debug("Power-aware controller started");
     }
 
@@ -54,9 +57,10 @@ public sealed class PowerAwareController : IDisposable
     {
         _pollTimer.Stop();
         Microsoft.Win32.SystemEvents.PowerModeChanged -= OnPowerModeChanged;
-        // Clear any Power pause we applied so we never leave the wallpapers
-        // paused by a reason we're no longer managing.
+        // Clear any Power pause AND scene throttle we applied so we never leave
+        // the wallpapers throttled by a controller that is no longer running.
         ClearBatteryPause();
+        _playback.SetSceneState(ScenePerformanceState.Battery, false);
         _logger.Debug("Power-aware controller stopped");
     }
 
@@ -67,21 +71,29 @@ public sealed class PowerAwareController : IDisposable
         if (e.Mode == Microsoft.Win32.PowerModes.StatusChange ||
             e.Mode == Microsoft.Win32.PowerModes.Resume)
         {
-            Poll();
+            PollOnce();
         }
     }
 
-    private void Poll()
+    // 供单元测试同步调用(等价于一次定时器 tick)。internal + InternalsVisibleTo
+    // 暴露给测试;生产路径走 Start() 的定时器,不直接调用。
+    internal void PollOnce()
     {
         try
         {
             var enabled = _getSettings().PauseOnBattery;
-            var onBattery = IsOnBattery();
+            var onBattery = _isOnBattery();
 
             if (enabled && onBattery)
                 ApplyBatteryPause();
             else
                 ClearBatteryPause();
+
+            // With the hard pause disabled, throttle instead: wallpapers keep
+            // running on battery but at a reduced present rate (15 FPS via the
+            // scene gate). While paused the gate is irrelevant, so the scene
+            // flag stays OFF in that path.
+            _playback.SetSceneState(ScenePerformanceState.Battery, !enabled && onBattery);
         }
         catch (Exception ex)
         {

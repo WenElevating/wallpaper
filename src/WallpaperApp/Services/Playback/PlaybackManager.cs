@@ -418,7 +418,7 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
     // reason clears — so an auto-resume can't clobber a pause held for another
     // reason. Reason accounting lives in PlaybackSession.ApplyPauseAsync.
     public Task PauseAllAsync(CancellationToken ct = default) => PauseAllAsync(PauseReason.User, ct);
-    public async Task PauseAllAsync(PauseReason reason, CancellationToken ct = default)
+    public virtual async Task PauseAllAsync(PauseReason reason, CancellationToken ct = default)
     {
         PlaybackSession[] sessions;
         lock (_lock) { sessions = _sessions.Values.ToArray(); }
@@ -428,7 +428,7 @@ public class PlaybackManager : IDisposable, IPlaybackPauseController
     }
 
     public Task ResumeAllAsync(CancellationToken ct = default) => ResumeAllAsync(PauseReason.User, ct);
-    public async Task ResumeAllAsync(PauseReason reason, CancellationToken ct = default)
+    public virtual async Task ResumeAllAsync(PauseReason reason, CancellationToken ct = default)
     {
         PlaybackSession[] sessions;
         lock (_lock) { sessions = _sessions.Values.ToArray(); }
